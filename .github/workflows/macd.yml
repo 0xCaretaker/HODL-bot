@@ -2,7 +2,7 @@ name: MACD Signal Bot
 
 on:
   schedule:
-    - cron: '50 3-9 * * 1-5'  # Every hour from 09:20 to 15:20 IST, weekdays
+    - cron: '45 3-9 * * 1-5'  # Every hour from 09:15 to 15:15 IST, weekdays
   workflow_dispatch:
 
 jobs:
