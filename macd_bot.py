@@ -2,7 +2,7 @@ import yfinance as yf
 import requests
 import re
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # Fetch MACD-based action for each stock
 def fetch_action(stocks, interval):
@@ -134,6 +134,12 @@ def colored_output(action):
 
 # Main logic
 def main():
+    # Print current time in UTC and IST
+    now_utc = datetime.now(timezone.utc)
+    now_ist = now_utc + timedelta(hours=5, minutes=30)
+    print("UTC Time:", now_utc.strftime('%Y-%m-%d %H:%M:%S'))
+    print("IST Time:", now_ist.strftime('%Y-%m-%d %H:%M:%S'))
+    
     stocks = [
         "ACE", "ADANIPOWER", "AETHER", "AIIL", "AMJLAND", "ANUP", "APOLLO", "ARIHANTCAP", "ARROWGREEN", "ARVSMART",
         "BANCOINDIA", "BIRLAMONEY", "BLUEJET", "BSE", "CONFIPET", "CONSOFINVT", "DATAPATTNS", "DOLATALGO", "DVL",
