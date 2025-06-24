@@ -1,0 +1,25 @@
+name: MACD Signal Bot
+
+on:
+  schedule:
+    - cron: '0 3-11 * * 1-5'  # Every hour from 8:30 AM to 4:30 PM IST, weekdays
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run MACD script
+        run: python macd_bot.py
