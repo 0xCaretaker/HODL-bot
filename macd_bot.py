@@ -81,7 +81,7 @@ def escape_md(text):
 # Send Telegram message
 def send_telegram_message(stock, action, interval, time, price):
     TELEGRAM_TOKEN = "7785965061:AAEAXssnkbyj9vSVGHoCNegoUitePkZDK8U"
-    TELEGRAM_CHAT_ID = "794061838"
+    TELEGRAM_CHAT_IDS = ["794061838", "6532562658"]  # List of chat IDs
 
     # TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
     # TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -103,18 +103,17 @@ def send_telegram_message(stock, action, interval, time, price):
         f"🕒 Time: `{escape_md(time.strftime('%Y-%m-%d %H:%M'))}`\n"
         f"💰 Close Price: ₹`{escape_md(f'{price:.2f}')}`"
     )
-
-    data = {
-        'chat_id': TELEGRAM_CHAT_ID,
-        'text': msg,
-        'parse_mode': 'MarkdownV2'
-    }
-
-    try:
-        response = requests.post(url, data=data)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        print(f"Telegram Error: {e}")
+    for chat_id in TELEGRAM_CHAT_IDS:
+        data = {
+            'chat_id': TELEGRAM_CHAT_ID,
+            'text': msg,
+            'parse_mode': 'MarkdownV2'
+        }
+        try:
+            response = requests.post(url, data=data)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"Telegram Error: {e}")
 
 
 # Colorful terminal output
