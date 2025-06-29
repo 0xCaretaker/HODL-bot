@@ -105,7 +105,7 @@ def send_telegram_message(stock, action, interval, time, price):
     )
     for chat_id in TELEGRAM_CHAT_IDS:
         data = {
-            'chat_id': TELEGRAM_CHAT_ID,
+            'chat_id': chat_id,
             'text': msg,
             'parse_mode': 'MarkdownV2'
         }
