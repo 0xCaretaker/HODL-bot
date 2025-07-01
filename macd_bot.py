@@ -149,7 +149,10 @@ def main():
     ]
     stocks = [s + ".NS" for s in stocks]
 
-    for interval in ["1d", "1h"]:
+    #intervals = ["1d", "1h"]
+    intervals = ["1h"]
+    
+    for interval in intervals:
         print(f"\nChecking interval: {interval}")
         results = fetch_action(stocks, interval)
 
