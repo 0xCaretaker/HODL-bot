@@ -74,47 +74,6 @@ def fetch_action(stocks, interval):
 
     return actions
 
-# Escape for Telegram MarkdownV2
-def escape_md(text):
-    return re.sub(r'([_*\[\]()~`>#+=|{}.!\\-])', r'\\\1', str(text))
-
-# Send Telegram message
-def send_telegram_message(stock, action, interval, time, price):
-    TELEGRAM_TOKEN = "7785965061:AAEAXssnkbyj9vSVGHoCNegoUitePkZDK8U"
-    TELEGRAM_CHAT_IDS = ["794061838", "6532562658"]  # List of chat IDs
-
-    # TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-    # TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-    url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
-
-    emoji = {
-        "Buy": "🟢",
-        "Sell": "🔴",
-        "Hold": "🟡",
-        "Wait for Buy": "🟣"
-    }.get(action, "ℹ️")
-
-    # Remove ".NS" if present
-    stock_clean = stock.replace(".NS", "")
-
-    msg = (
-        f"{emoji} *{escape_md(stock_clean)}* gave a *{escape_md(action)}* signal\n"
-        f"⏱️ Interval: `{escape_md(interval)}`\n"
-        f"🕒 Time: `{escape_md(time.strftime('%Y-%m-%d %H:%M'))}`\n"
-        f"💰 Close Price: ₹`{escape_md(f'{price:.2f}')}`"
-    )
-    for chat_id in TELEGRAM_CHAT_IDS:
-        data = {
-            'chat_id': chat_id,
-            'text': msg,
-            'parse_mode': 'MarkdownV2'
-        }
-        try:
-            response = requests.post(url, data=data)
-            response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            print(f"Telegram Error: {e}")
-
 
 # Colorful terminal output
 def colored_output(action):
@@ -131,14 +90,84 @@ def colored_output(action):
         "Wait for Buy": f"{MAGENTA}{action}{RESET}"
     }.get(action, action)
 
+
+# Escape for Telegram MarkdownV2
+def escape_md(text):
+    return re.sub(r'([_*\[\]()~`>#+=|{}.!\\-])', r'\\\1', str(text))
+
+# send notifications to telegram
+def send_bulk_telegram_message(all_interval_signals):
+    TELEGRAM_TOKEN = "7785965061:AAEAXssnkbyj9vSVGHoCNegoUitePkZDK8U"
+    TELEGRAM_CHAT_IDS = ["794061838", "6532562658"]
+    url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
+
+    emoji = {
+        "Buy": "🟢",
+        "Sell": "🔴",
+        "Hold": "🟡",
+        "Wait for Buy": "🟣"
+    }
+
+    #  Calculate global max_len across all intervals
+    all_stock_names = []
+    for all_signals in all_interval_signals.values():
+        for stock, info in all_signals.items():
+            action, time, price = info["action"], info["time"], info["price"]
+            if action in ["Buy", "Sell"] and time and price:
+                stock_clean = stock.replace(".NS", "")
+                all_stock_names.append(stock_clean)
+    max_len = max((len(stock) for stock in all_stock_names), default=0)
+
+    combined_lines = []
+    now = datetime.now()
+    now_str = f"{now.day}{('th' if 11<=now.day<=13 else {1:'st',2:'nd',3:'rd'}.get(now.day%10,'th'))} {now.strftime('%B, %I:%M%p')}"
+    combined_lines.append(f"*📊 Signal Alert \| [{escape_md(now_str)}]*\n")
+
+    for interval, all_signals in all_interval_signals.items():
+        entries = []
+        for stock, info in all_signals.items():
+            action, time, price = info["action"], info["time"], info["price"]
+            if action in ["Buy", "Sell"] and time and price:
+                stock_clean = stock.replace(".NS", "")
+                entries.append((stock_clean, action, price))
+
+        if not entries:
+            continue
+
+        # Add interval header
+        combined_lines.append(f"⏱️ Interval: `{escape_md(interval)}`")
+
+        # Format each stock signal line
+        for stock, action, price in entries:
+            padded_stock = stock.ljust(max_len)
+            combined_lines.append(f"{emoji[action]} `{escape_md(padded_stock)} ₹{price:.2f}`")
+
+        combined_lines.append("")  # spacing between intervals
+
+    if len(combined_lines) <= 1:
+        return  # no valid messages to send
+
+    final_message = "\n".join(combined_lines)
+
+    for chat_id in TELEGRAM_CHAT_IDS:
+        data = {
+            'chat_id': chat_id,
+            'text': final_message,
+            'parse_mode': 'MarkdownV2'
+        }
+        try:
+            response = requests.post(url, data=data)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"Telegram Error: {e}")
+
 # Main logic
 def main():
-    # Print current time in UTC and IST
     now_utc = datetime.now(timezone.utc)
     now_ist = now_utc + timedelta(hours=5, minutes=30)
     print("UTC Time:", now_utc.strftime('%Y-%m-%d %H:%M:%S'))
     print("IST Time:", now_ist.strftime('%Y-%m-%d %H:%M:%S'))
-    
+
     stocks = [
         "ACE", "ADANIPOWER", "AETHER", "AIIL", "AMJLAND", "ANUP", "APOLLO", "ARIHANTCAP", "ARROWGREEN", "ARVSMART",
         "BANCOINDIA", "BIRLAMONEY", "BLUEJET", "BSE", "CONFIPET", "CONSOFINVT", "DATAPATTNS", "DOLATALGO", "DVL",
@@ -148,10 +177,10 @@ def main():
         "SHAKTIPUMP", "SPIC", "SUZLON", "TATAMOTORS", "TDPOWERSYS", "UTIAMC", "V2RETAIL"
     ]
     stocks = [s + ".NS" for s in stocks]
+    intervals = ["1d", "1h"]
 
-    #intervals = ["1d", "1h"]
-    intervals = ["1h"]
-    
+    all_interval_signals = {}
+
     for interval in intervals:
         print(f"\nChecking interval: {interval}")
         results = fetch_action(stocks, interval)
@@ -160,8 +189,10 @@ def main():
             action, time, price = info["action"], info["time"], info["price"]
             print(f"{stock} @ ₹{price:.2f}: {colored_output(action)} ")
 
-            if action in ["Buy", "Sell"] and time and price:
-                send_telegram_message(stock, action, interval, time, price)
+        all_interval_signals[interval] = results
+
+    send_bulk_telegram_message(all_interval_signals)
+
 
 if __name__ == "__main__":
     main()
