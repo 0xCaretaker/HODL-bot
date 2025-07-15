@@ -119,7 +119,7 @@ def send_bulk_telegram_message(all_interval_signals):
     max_len = max((len(stock) for stock in all_stock_names), default=0)
 
     combined_lines = []
-    now = datetime.now()
+    now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30) 
     now_str = f"{now.day}{('th' if 11<=now.day<=13 else {1:'st',2:'nd',3:'rd'}.get(now.day%10,'th'))} {now.strftime('%B, %I:%M%p')}"
     combined_lines.append(f"*📊 Signal Alert \| [{escape_md(now_str)}]*\n")
 
