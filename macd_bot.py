@@ -95,8 +95,43 @@ def colored_output(action):
 def escape_md(text):
     return re.sub(r'([_*\[\]()~`>#+=|{}.!\\-])', r'\\\1', str(text))
 
+def get_index_moves():
+    import yfinance as yf
+
+    index_symbols = {
+        "NIFTY 50": "^NSEI",
+        "NIFTY Midcap 100": "NIFTY_MIDCAP_100.NS"
+    }
+
+    index_moves = {}
+
+    try:
+        # Get last 10 years of daily data to estimate ATH
+        history = yf.download(list(index_symbols.values()), period="10y", interval="1d", progress=False)
+        latest = yf.download(list(index_symbols.values()), period="1d", interval="1d", progress=False)
+
+        for name, symbol in index_symbols.items():
+            hist_close = history['Close'][symbol].dropna()
+            ath = hist_close.max()
+
+            latest_open = latest['Open'][symbol][0]
+            latest_close = latest['Close'][symbol][0]
+            pct_move = ((latest_close - latest_open) / latest_open) * 100
+
+            from_ath_pct = ((latest_close - ath) / ath) * 100
+
+            index_moves[name] = {
+                "pct_move": round(pct_move, 2),
+                "from_ath": round(from_ath_pct, 2),
+            }
+
+    except Exception as e:
+        print(f"Error fetching index data: {e}")
+
+    return index_moves
+
 # send notifications to telegram
-def send_bulk_telegram_message(all_interval_signals):
+def send_bulk_telegram_message(all_interval_signals, index_moves):
     TELEGRAM_TOKEN = "7785965061:AAEAXssnkbyj9vSVGHoCNegoUitePkZDK8U"
     TELEGRAM_CHAT_IDS = ["794061838", "6532562658"]
     url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
@@ -108,39 +143,68 @@ def send_bulk_telegram_message(all_interval_signals):
         "Wait for Buy": "🟣"
     }
 
-    #  Calculate global max_len across all intervals
     all_stock_names = []
     for all_signals in all_interval_signals.values():
         for stock, info in all_signals.items():
             action, time, price = info["action"], info["time"], info["price"]
-            if action in ["Buy", "Sell"] and time and price:
+            if action in ["Buy", "Sell", "Hold", "Wait for Buy"] and time and price:
                 stock_clean = stock.replace(".NS", "")
                 all_stock_names.append(stock_clean)
     max_len = max((len(stock) for stock in all_stock_names), default=0)
 
     combined_lines = []
-    now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30) 
+    now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     now_str = f"{now.day}{('th' if 11<=now.day<=13 else {1:'st',2:'nd',3:'rd'}.get(now.day%10,'th'))} {now.strftime('%B, %I:%M%p')}"
-    combined_lines.append(f"*📊 Signal Alert \| [{escape_md(now_str)}]*\n")
+    combined_lines.append(f"*📊 Signal Alert \| [{escape_md(now_str)}]*")
+
+    # Add index moves at the top
+    if index_moves:
+        for name, info in index_moves.items():
+            pct = info['pct_move']
+            ath_diff = info['from_ath']
+            arrow = "🔺" if pct > 0 else "🔻"
+            combined_lines.append(
+                f"{arrow} {escape_md(name)}: `{pct:+.2f}%` _\\(from ATH: `{ath_diff:+.2f}%`\\)_"
+            )
+
 
     for interval, all_signals in all_interval_signals.items():
         entries = []
+        total_stocks = 0
+        wait_for_buy_count = 0
+        hold_count = 0
+
         for stock, info in all_signals.items():
             action, time, price = info["action"], info["time"], info["price"]
+            if action in ["Buy", "Sell", "Hold", "Wait for Buy"] and time and price:
+                total_stocks += 1
+                if action == "Wait for Buy":
+                    wait_for_buy_count += 1
+                elif action == "Hold":
+                    hold_count += 1
+
             if action in ["Buy", "Sell"] and time and price:
                 stock_clean = stock.replace(".NS", "")
                 entries.append((stock_clean, action, price))
 
-        if not entries:
+        if not entries and total_stocks == 0:
             continue
 
-        # Add interval header
-        combined_lines.append(f"⏱️ Interval: `{escape_md(interval)}`")
+        combined_lines.append(f"\n⏱️ Interval: `{escape_md(interval)}`")
 
-        # Format each stock signal line
         for stock, action, price in entries:
             padded_stock = stock.ljust(max_len)
             combined_lines.append(f"{emoji[action]} `{escape_md(padded_stock)} ₹{price:.2f}`")
+
+        if total_stocks > 0:
+            wait_pct = (wait_for_buy_count / total_stocks) * 100
+            hold_pct = (hold_count / total_stocks) * 100
+            summary = (
+                f"\n📈 *Summary:*  \n"
+                f"🟣 Wait for Buy: `{escape_md(f'{wait_for_buy_count}/{total_stocks}')} ({wait_pct:.1f}%)`\n"
+                f"🟡 Hold: `{escape_md(f'{hold_count}/{total_stocks}')} ({hold_pct:.1f}%)`\n"
+            )
+            combined_lines.append(summary)
 
         combined_lines.append("")  # spacing between intervals
 
@@ -161,6 +225,7 @@ def send_bulk_telegram_message(all_interval_signals):
         except requests.exceptions.RequestException as e:
             print(f"Telegram Error: {e}")
 
+
 # Main logic
 def main():
     now_utc = datetime.now(timezone.utc)
@@ -177,7 +242,16 @@ def main():
         "SHAKTIPUMP", "SPIC", "SUZLON", "TATAMOTORS", "TDPOWERSYS", "UTIAMC", "V2RETAIL"
     ]
     stocks = [s + ".NS" for s in stocks]
-    intervals = ["1d", "1h"]
+    # intervals = ["1h", "1d"]
+    intervals = ["1d"]
+
+    index_moves = get_index_moves()
+    print("\n📈 Index Moves:")
+    for name, info in index_moves.items():
+        pct = info['pct_move']
+        ath_diff = info['from_ath']
+        arrow = "🔺" if pct > 0 else "🔻"
+        print(f"{arrow} {name}: {pct:+.2f}%  (from ATH: {ath_diff:+.2f}%)")
 
     all_interval_signals = {}
 
@@ -191,7 +265,7 @@ def main():
 
         all_interval_signals[interval] = results
 
-    send_bulk_telegram_message(all_interval_signals)
+    send_bulk_telegram_message(all_interval_signals, index_moves)
 
 
 if __name__ == "__main__":
