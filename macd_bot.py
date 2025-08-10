@@ -233,14 +233,14 @@ def main():
     print("UTC Time:", now_utc.strftime('%Y-%m-%d %H:%M:%S'))
     print("IST Time:", now_ist.strftime('%Y-%m-%d %H:%M:%S'))
 
-    stocks = [
-        "ACE", "ADANIPOWER", "AETHER", "AIIL", "AMJLAND", "ANUP", "APOLLO", "ARIHANTCAP", "ARROWGREEN", "ARVSMART",
-        "BANCOINDIA", "BIRLAMONEY", "BLUEJET", "BSE", "CONFIPET", "CONSOFINVT", "DATAPATTNS", "DOLATALGO", "DVL",
-        "ELECON", "EPIGRAL", "GANESHHOUC", "GENUSPOWER", "GEOJITFSL", "GOKULAGRO", "GRSE", "GRWRHITECH", "IIFLCAPS",
-        "INDIAMART", "INDOTECH", "INTLCONV", "IPL", "JINDALPHOT", "JUBLFOOD", "JWL", "KIRLPNU", "KITEX", "LLOYDSENGG",
-        "MANINDS", "MANORAMA", "MOTILALOFS", "NATIONALUM", "OBEROIRLTY", "PARADEEP", "POKARNA", "RKFORGE", "SARDAEN",
-        "SHAKTIPUMP", "SPIC", "SUZLON", "TATAMOTORS", "TDPOWERSYS", "UTIAMC", "V2RETAIL"
-    ]
+    # Read stock symbols from stocks.txt
+    try:
+        with open("stocks.txt", "r") as f:
+            stocks = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        print("Error: stocks.txt file not found.")
+        return
+    
     stocks = [s + ".NS" for s in stocks]
     # intervals = ["1h", "1d"]
     intervals = ["1d"]
