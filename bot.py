@@ -3,14 +3,20 @@ import re
 from datetime import datetime, timezone, timedelta
 import yfinance as yf
 
-from macd_signals import fetch_both_signals, colored_output
+from macd_signals import process_both_signals, colored_output
+from bollinger_signals import process_bollinger_signals
 
 
 # =========================
 # Escape for Telegram MarkdownV2
 # =========================
 def escape_md(text):
-    return re.sub(r'([_*\[\]()~`>#+=|{}.!\\-])', r'\\\1', str(text))
+    """Escape special characters for Telegram MarkdownV2"""
+    text = str(text)
+    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in special_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
 
 
 # =========================
@@ -63,9 +69,9 @@ def get_index_moves():
 
 
 # =========================
-# Telegram sender
+# Telegram sender (Filtered by Bollinger Bands)
 # =========================
-def send_bulk_telegram_message(all_interval_signals, index_moves):
+def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_moves):
     TELEGRAM_TOKEN = "7785965061:AAEAXssnkbyj9vSVGHoCNegoUitePkZDK8U"
     TELEGRAM_CHAT_IDS = ["794061838", "6532562658"]
     url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
@@ -74,16 +80,26 @@ def send_bulk_telegram_message(all_interval_signals, index_moves):
         "Buy": "🟢",
         "Sell": "🔴",
         "Hold": "🟡",
-        "Wait for Buy": "🟣"
+        "Wait for Buy": "🟣",
+        "Watch": "🟣"
+    }
+
+    # Create filter set: only stocks with Bollinger Buy or Watch signals
+    bollinger_filter = {
+        stock for stock, info in bollinger_signals.items()
+        if info["action"] in ["Buy", "Watch"]
     }
 
     all_stock_names = []
+
+    # Collect stock names from MACD signals (only those in Bollinger filter)
     for all_signals in all_interval_signals.values():
         for stock, info in all_signals.items():
-            action, time, price = info["action"], info["time"], info["price"]
-            if action and time and price:
-                stock_clean = stock.replace(".NS", "").replace(".BO", "")
-                all_stock_names.append(stock_clean)
+            if stock in bollinger_filter:
+                action, time, price = info["action"], info["time"], info["price"]
+                if action and time and price:
+                    stock_clean = stock.replace(".NS", "").replace(".BO", "")
+                    all_stock_names.append(stock_clean)
 
     max_len = max((len(stock) for stock in all_stock_names), default=0)
 
@@ -98,13 +114,15 @@ def send_bulk_telegram_message(all_interval_signals, index_moves):
             pct = info['pct_move']
             ath_diff = info['from_ath']
             arrow = "🔺" if pct > 0 else "🔻"
+            pct_str = f"{pct:+.2f}%"
+            ath_str = f"{ath_diff:+.2f}%"
             combined_lines.append(
-                f"{arrow} {escape_md(name)}: `{pct:+.2f}%` "
-                f"_\\(from ATH: `{ath_diff:+.2f}%`\\)_"
+                f"{arrow} {escape_md(name)}: `{escape_md(pct_str)}` "
+                f"_\\(from ATH: `{escape_md(ath_str)}`\\)_"
             )
         combined_lines.append("")
 
-    # Signals
+    # MACD Signals (filtered by Bollinger Bands)
     for interval, all_signals in all_interval_signals.items():
         entries = []
         total_stocks = 0
@@ -112,6 +130,10 @@ def send_bulk_telegram_message(all_interval_signals, index_moves):
         hold_count = 0
 
         for stock, info in all_signals.items():
+            # Only process stocks that passed Bollinger filter
+            if stock not in bollinger_filter:
+                continue
+                
             action, time, price = info["action"], info["time"], info["price"]
 
             if action and time and price:
@@ -128,7 +150,6 @@ def send_bulk_telegram_message(all_interval_signals, index_moves):
         if not entries and total_stocks == 0:
             continue
 
-        # Section header
         if "Impulse" in interval:
             combined_lines.append("\n🟠 *IMPULSE MACD \\(LazyBear\\):*")
         else:
@@ -138,8 +159,9 @@ def send_bulk_telegram_message(all_interval_signals, index_moves):
 
         for stock, action, price in entries:
             padded_stock = stock.ljust(max_len)
+            price_str = f"{price:.2f}"
             combined_lines.append(
-                f"{emoji[action]} `{escape_md(padded_stock)} ₹{price:.2f}`"
+                f"{emoji[action]} `{escape_md(padded_stock)} ₹{escape_md(price_str)}`"
             )
 
         if total_stocks > 0:
@@ -149,9 +171,9 @@ def send_bulk_telegram_message(all_interval_signals, index_moves):
             summary = (
                 f"\n📈 *Summary:*  \n"
                 f"🟣 Wait for Buy: "
-                f"`{escape_md(f'{wait_for_buy_count}/{total_stocks}')} ({wait_pct:.1f}%)`\n"
+                f"`{wait_for_buy_count}/{total_stocks} \\({wait_pct:.1f}%\\)`\n"
                 f"🟡 Hold: "
-                f"`{escape_md(f'{hold_count}/{total_stocks}')} ({hold_pct:.1f}%)`\n"
+                f"`{hold_count}/{total_stocks} \\({hold_pct:.1f}%\\)`\n"
             )
             combined_lines.append(summary)
 
@@ -202,38 +224,64 @@ def main():
     intervals = ["1d"]
 
     index_moves = get_index_moves()
-    print("\n📈 Index Moves:")
-    for name, info in index_moves.items():
-        pct = info['pct_move']
-        ath_diff = info['from_ath']
-        arrow = "🔺" if pct > 0 else "🔻"
-        print(f"{arrow} {name}: {pct:+.2f}%  (from ATH: {ath_diff:+.2f}%)")
+
+    print("\n" + "=" * 60)
+    print("DOWNLOADING DATA...")
+    print("=" * 60)
+
+    data = yf.download(
+        stocks,
+        period="1y",
+        interval="1d",
+        auto_adjust=False,
+        progress=False,
+        threads=False,
+    )
+
+    if data.empty:
+        print("Download failed: empty dataset")
+        return
+
+    print(f"✓ Downloaded data for {len(stocks)} stocks")
 
     all_interval_signals = {}
 
     for interval in intervals:
-        print(f"\nChecking interval: {interval}")
-
-        results_macd, results_impulse = fetch_both_signals(stocks, interval)
-
-        print("\n" + "=" * 60)
-        print("STANDARD MACD")
-        print("=" * 60)
-        for stock, info in results_macd.items():
-            print(f"{stock} @ ₹{info['price']:.2f}: {colored_output(info['action'])}")
-
-        print("\n" + "=" * 60)
-        print("IMPULSE MACD (LazyBear)")
-        print("=" * 60)
-        for stock, info in results_impulse.items():
-            print(f"{stock} @ ₹{info['price']:.2f}: {colored_output(info['action'])}")
-
+        results_macd, results_impulse = process_both_signals(data, stocks)
 
         all_interval_signals[interval] = results_macd
         all_interval_signals[f"{interval} Impulse MACD"] = results_impulse
 
+    bollinger_results = process_bollinger_signals(data, stocks, length=200)
 
-    send_bulk_telegram_message(all_interval_signals, index_moves)
+    # Print Bollinger Bands results to console
+    print("\n" + "=" * 60)
+    print("BOLLINGER BANDS (Length=200)")
+    print("=" * 60)
+
+    buy_signals = {s: i for s, i in bollinger_results.items() if i['action'] == 'Buy'}
+    watch_signals = {s: i for s, i in bollinger_results.items() if i['action'] == 'Watch'}
+    hold_signals = {s: i for s, i in bollinger_results.items() if i['action'] == 'Hold'}
+
+    if buy_signals:
+        print("\n🟢 BUY SIGNALS:")
+        for stock, info in buy_signals.items():
+            from bollinger_signals import colored_output as bb_colored_output
+            print(f"{stock} @ ₹{info['price']:.2f}: {bb_colored_output(info['action'])}")
+    else:
+        print("\n🟢 No Buy signals at this time")
+
+    if watch_signals:
+        print("\n🟣 WATCH SIGNALS:")
+        for stock, info in watch_signals.items():
+            from bollinger_signals import colored_output as bb_colored_output
+            print(f"{stock} @ ₹{info['price']:.2f}: {bb_colored_output(info['action'])}")
+    else:
+        print("\n🟣 No Watch signals")
+
+    print(f"\n🟡 HOLD: {len(hold_signals)} stocks")
+
+    send_bulk_telegram_message(all_interval_signals, bollinger_results, index_moves)
 
 
 if __name__ == "__main__":
