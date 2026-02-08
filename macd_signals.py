@@ -2,7 +2,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-
 # =========================
 # Utility helpers
 # =========================
@@ -111,8 +110,6 @@ def calculate_macd(df):
     trend[bullish] = "B"
     trend[bearish] = "S"
 
-    print("MACD Trend:", trend[-5:])
-
     return _trend_to_action(trend)
 
 
@@ -134,17 +131,8 @@ def calculate_impulse_macd(df, length_ma=34, length_signal=9):
     lo = calc_smma(low, length_ma)
     mi = calc_zlema(src, length_ma)
 
-    # # Debug: Check data quality
-    # print(f"\n  Data length: {len(df)}")
-    # print(f"  Last 5 High: {high[-5:]}")
-    # print(f"  Last 5 Low: {low[-5:]}")
-    # print(f"  Last 5 HI (SMMA): {hi[-5:]}")
-    # print(f"  Last 5 LO (SMMA): {lo[-5:]}")
-    # print(f"  Last 5 MI (ZLEMA): {mi[-5:]}")
-
     # Check for NaN values
     if np.any(np.isnan(hi)) or np.any(np.isnan(lo)) or np.any(np.isnan(mi)):
-        print(f"  WARNING: NaN values detected - skipping")
         return "Hold"
 
     # Calculate ImpulseMACD
@@ -155,10 +143,6 @@ def calculate_impulse_macd(df, length_ma=34, length_signal=9):
     
     # Calculate histogram
     sh = md - sb
-
-    # print(f"  Last 5 MD values: {md[-5:]}")
-    # print(f"  Last 5 SB values: {sb[-5:]}")
-    # print(f"  Last 5 SH (histogram): {sh[-5:]}")
 
     # Detect crossovers based on MD crossing SB
     prev_md = np.concatenate([[np.nan], md[:-1]])
@@ -171,32 +155,32 @@ def calculate_impulse_macd(df, length_ma=34, length_signal=9):
     trend[bullish] = "B"
     trend[bearish] = "S"
 
-    print(f"  Impulse Trend: {trend[-5:]}")
     return _trend_to_action(trend)
 
 
 # =========================
-# Data fetch (single batch)
+# Process signals from pre-downloaded data
 # =========================
 
-def fetch_both_signals(stocks, interval):
+def process_both_signals(data, stocks):
+    """
+    Process MACD signals from pre-downloaded data
+    
+    Args:
+        data: Pre-downloaded yfinance data (MultiIndex DataFrame)
+        stocks: List of stock symbols
+    
+    Returns:
+        Tuple of (macd_actions, impulse_actions) dictionaries
+    """
     macd_actions = {}
     impulse_actions = {}
 
-    print(f"\nDownloading {len(stocks)} symbols in one batch...\n")
-
-    data = yf.download(
-        stocks,
-        period="90d",
-        interval=interval,
-        auto_adjust=False,
-        progress=False,
-        threads=False,
-    )
-
     if data.empty:
-        print("Download failed: empty dataset")
+        print("Empty dataset provided")
         return macd_actions, impulse_actions
+
+    print(f"\nProcessing MACD signals for {len(stocks)} stocks...")
 
     for idx, stock in enumerate(stocks, 1):
         try:
@@ -236,6 +220,30 @@ def fetch_both_signals(stocks, interval):
             print(f"✗ ({str(e)[:60]})")
 
     return macd_actions, impulse_actions
+
+
+# =========================
+# LEGACY: Data fetch + process
+# =========================
+
+def fetch_both_signals(stocks, interval):
+    """LEGACY: Downloads data and calculates signals. Use process_both_signals with pre-downloaded data instead."""
+    print(f"\nDownloading {len(stocks)} symbols in one batch...")
+
+    data = yf.download(
+        stocks,
+        period="90d",
+        interval=interval,
+        auto_adjust=False,
+        progress=False,
+        threads=False,
+    )
+
+    if data.empty:
+        print("Download failed: empty dataset")
+        return {}, {}
+
+    return process_both_signals(data, stocks)
 
 
 # =========================
