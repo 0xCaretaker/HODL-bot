@@ -22,4 +22,4 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run MACD script
-        run: python macd_bot.py
+        run: python bot.py
