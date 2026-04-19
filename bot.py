@@ -1,6 +1,8 @@
+import os
 import requests
 import re
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import yfinance as yf
 
 from macd_signals import process_both_signals, colored_output
@@ -39,20 +41,14 @@ def get_index_moves():
             auto_adjust=True
         )
 
-        latest = yf.download(
-            list(index_symbols.values()),
-            period="1d",
-            interval="1d",
-            progress=False,
-            auto_adjust=True
-        )
-
         for name, symbol in index_symbols.items():
             hist_close = history['Close'][symbol].dropna()
             ath = hist_close.max()
 
-            latest_open = latest['Open'][symbol][0]
-            latest_close = latest['Close'][symbol][0]
+            latest_close = hist_close.iloc[-1] if len(hist_close) > 0 else 0
+
+            hist_open = history['Open'][symbol].dropna()
+            latest_open = hist_open.iloc[-1] if len(hist_open) > 0 else 0
 
             pct_move = ((latest_close - latest_open) / latest_open) * 100
             from_ath_pct = ((latest_close - ath) / ath) * 100
@@ -72,8 +68,11 @@ def get_index_moves():
 # Telegram sender (Filtered by Bollinger Bands)
 # =========================
 def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_moves):
-    TELEGRAM_TOKEN = "7785965061:AAEAXssnkbyj9vSVGHoCNegoUitePkZDK8U"
-    TELEGRAM_CHAT_IDS = ["794061838", "6532562658"]
+    TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+    TELEGRAM_CHAT_IDS = os.environ.get("TELEGRAM_CHAT_IDS", "").split(",")
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_IDS[0]:
+        print("Error: TELEGRAM_TOKEN and TELEGRAM_CHAT_IDS env vars required")
+        return
     url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
 
     emoji = {
@@ -104,7 +103,7 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
     max_len = max((len(stock) for stock in all_stock_names), default=0)
 
     combined_lines = []
-    now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
     now_str = now.strftime('%d %B, %I:%M%p')
     combined_lines.append(f"*📊 Signal Alert \\| [{escape_md(now_str)}]*")
 
@@ -208,7 +207,7 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
 # =========================
 def main():
     now_utc = datetime.now(timezone.utc)
-    now_ist = now_utc + timedelta(hours=5, minutes=30)
+    now_ist = now_utc.astimezone(ZoneInfo("Asia/Kolkata"))
 
     print("UTC Time:", now_utc.strftime('%Y-%m-%d %H:%M:%S'))
     print("IST Time:", now_ist.strftime('%Y-%m-%d %H:%M:%S'))
@@ -233,7 +232,7 @@ def main():
         stocks,
         period="1y",
         interval="1d",
-        auto_adjust=False,
+        auto_adjust=True,
         progress=False,
         threads=False,
     )

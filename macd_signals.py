@@ -63,25 +63,12 @@ def calc_zlema(src, length):
 # =========================
 
 def _trend_to_action(trend_series):
-    action_list = []
-    last_trend = None
-    
-    for trend in trend_series:
-        if trend == "B":
-            action_list.append("Buy")
-            last_trend = "Bullish"
-        elif trend == "S":
-            action_list.append("Sell")
-            last_trend = "Bearish"
-        else:
-            if last_trend == "Bullish":
-                action_list.append("Hold")
-            elif last_trend == "Bearish":
-                action_list.append("Wait for Buy")
-            else:
-                action_list.append("Hold")
-
-    return action_list[-1] if action_list else "Hold"
+    for i in range(len(trend_series) - 1, -1, -1):
+        if trend_series[i] == "B":
+            return "Buy" if i == len(trend_series) - 1 else "Hold"
+        elif trend_series[i] == "S":
+            return "Sell" if i == len(trend_series) - 1 else "Wait for Buy"
+    return "Hold"
 
 
 # =========================
@@ -130,10 +117,6 @@ def calculate_impulse_macd(df, length_ma=34, length_signal=9):
     hi = calc_smma(high, length_ma)
     lo = calc_smma(low, length_ma)
     mi = calc_zlema(src, length_ma)
-
-    # Check for NaN values
-    if np.any(np.isnan(hi)) or np.any(np.isnan(lo)) or np.any(np.isnan(mi)):
-        return "Hold"
 
     # Calculate ImpulseMACD
     md = np.where(mi > hi, mi - hi, np.where(mi < lo, mi - lo, 0))
@@ -234,7 +217,7 @@ def fetch_both_signals(stocks, interval):
         stocks,
         period="90d",
         interval=interval,
-        auto_adjust=False,
+        auto_adjust=True,
         progress=False,
         threads=False,
     )

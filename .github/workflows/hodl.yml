@@ -22,4 +22,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run MACD + Impulse + Bollinger script
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_IDS: ${{ secrets.TELEGRAM_CHAT_IDS }}
         run: python bot.py

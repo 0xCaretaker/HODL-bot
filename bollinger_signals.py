@@ -143,7 +143,7 @@ def fetch_bollinger_signals(stocks, interval, length=200):
         stocks,
         period="1y",
         interval=interval,
-        auto_adjust=False,
+        auto_adjust=True,
         progress=False,
         threads=False,
     )
