@@ -6,6 +6,8 @@ An automated **algo-trading signal system** that identifies deeply undervalued s
 >
 > The watchlist in `stocks.txt` is curated via a separate fundamental analysis tool (not included in this repo) — this bot handles the technical timing layer on top of that fundamental filter.
 
+### [Join the Telegram channel to receive live signals](https://t.me/+HsYzByFRp5ZlNDk1)
+
 ---
 
 ## How It Works
