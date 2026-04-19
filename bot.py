@@ -127,15 +127,41 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
             )
         combined_lines.append("")
 
-    bb_tag = {"Buy": "BB:Buy", "Watch": "BB:Watch"}
-
+    # Compute sentiment first (need it before MACD sections)
     sentiment_parts = []
+    for interval, all_signals in all_interval_signals.items():
+        total = hold_count = wait_count = 0
+        for stock, info in all_signals.items():
+            if stock not in bollinger_filter:
+                continue
+            action = info["action"]
+            if action:
+                total += 1
+                if action == "Hold":
+                    hold_count += 1
+                elif action == "Wait for Buy":
+                    wait_count += 1
+        if total > 0:
+            sentiment_parts.append((interval, (hold_count / total) * 100, (wait_count / total) * 100))
 
+    if sentiment_parts:
+        avg_hold = sum(h for _, h, _ in sentiment_parts) / len(sentiment_parts)
+        avg_wait = sum(w for _, _, w in sentiment_parts) / len(sentiment_parts)
+        if avg_hold >= 70:
+            mood, icon = "Bullish", "🟢"
+        elif avg_hold >= 40:
+            mood, icon = "Neutral", "🟡"
+        elif avg_wait >= 70:
+            mood, icon = "Bearish", "🔴"
+        else:
+            mood, icon = "Cautious", "🟠"
+        combined_lines.append(f"{icon} *Sentiment: {mood}*")
+        combined_lines.append("")
+
+    # MACD Signals (filtered by Bollinger Bands)
     for interval, all_signals in all_interval_signals.items():
         entries = []
-        total = 0
-        hold_count = 0
-        wait_count = 0
+        total = hold_count = wait_count = 0
 
         for stock, info in all_signals.items():
             if stock not in bollinger_filter:
@@ -149,8 +175,7 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
                     wait_count += 1
             if action in ["Buy", "Sell"] and time and price:
                 stock_clean = stock.replace(".NS", "").replace(".BO", "")
-                bb_status = bb_tag.get(bollinger_signals.get(stock, {}).get("action", ""), "")
-                entries.append((stock_clean, action, price, bb_status))
+                entries.append((stock_clean, action, price))
 
         if not entries and total == 0:
             continue
@@ -160,37 +185,26 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
         else:
             combined_lines.append("\n🔵 *STANDARD MACD:*")
 
-        for stock, action, price, bb in entries:
+        combined_lines.append(f"⏱️ `{escape_md(interval)}`")
+
+        for stock, action, price in entries:
             padded_stock = stock.ljust(max_len)
             price_str = f"{price:.2f}"
-            bb_str = f" _{escape_md(bb)}_" if bb else ""
             combined_lines.append(
-                f"{emoji[action]} `{escape_md(padded_stock)} ₹{escape_md(price_str)}`{bb_str}"
+                f"{emoji[action]} `{escape_md(padded_stock)} ₹{escape_md(price_str)}`"
             )
 
         if total > 0:
-            hold_pct = (hold_count / total) * 100
             wait_pct = (wait_count / total) * 100
-            combined_lines.append(
-                f"🟡 Hold: `{hold_count}/{total} \\({hold_pct:.0f}%\\)` "
-                f"🟣 Wait: `{wait_count}/{total} \\({wait_pct:.0f}%\\)`"
+            hold_pct = (hold_count / total) * 100
+            summary = (
+                f"\n📈 *Summary:*  \n"
+                f"🟣 Wait for Buy: "
+                f"`{wait_count}/{total} \\({wait_pct:.1f}%\\)`\n"
+                f"🟡 Hold: "
+                f"`{hold_count}/{total} \\({hold_pct:.1f}%\\)`\n"
             )
-            sentiment_parts.append((interval, hold_pct, wait_pct))
-
-    if sentiment_parts:
-        avg_hold = sum(h for _, h, _ in sentiment_parts) / len(sentiment_parts)
-        avg_wait = sum(w for _, _, w in sentiment_parts) / len(sentiment_parts)
-        if avg_hold >= 70:
-            mood, icon = "Bullish", "🟢"
-        elif avg_hold >= 40:
-            mood, icon = "Neutral", "🟡"
-        elif avg_wait >= 70:
-            mood, icon = "Bearish", "🔴"
-        else:
-            mood, icon = "Cautious", "🟠"
-        combined_lines.append(
-            f"\n{icon} *Sentiment: {mood}*"
-        )
+            combined_lines.append(summary)
 
     if len(combined_lines) <= 1:
         return
