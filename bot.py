@@ -43,21 +43,26 @@ def get_index_moves():
         )
 
         for name, symbol in index_symbols.items():
-            hist_close = history['Close'][symbol].dropna()
-            ath = hist_close.max()
+            try:
+                hist_close = history['Close'][symbol].dropna()
+                if len(hist_close) == 0:
+                    print(f"  ✗ {name}: no data")
+                    continue
+                ath = hist_close.max()
 
-            latest_close = hist_close.iloc[-1] if len(hist_close) > 0 else 0
+                hist_open = history['Open'][symbol].dropna()
+                latest_close = hist_close.iloc[-1]
+                latest_open = hist_open.iloc[-1] if len(hist_open) > 0 else latest_close
 
-            hist_open = history['Open'][symbol].dropna()
-            latest_open = hist_open.iloc[-1] if len(hist_open) > 0 else 0
+                pct_move = ((latest_close - latest_open) / latest_open) * 100 if latest_open else 0
+                from_ath_pct = ((latest_close - ath) / ath) * 100 if ath else 0
 
-            pct_move = ((latest_close - latest_open) / latest_open) * 100
-            from_ath_pct = ((latest_close - ath) / ath) * 100
-
-            index_moves[name] = {
-                "pct_move": round(pct_move, 2),
-                "from_ath": round(from_ath_pct, 2),
-            }
+                index_moves[name] = {
+                    "pct_move": round(pct_move, 2),
+                    "from_ath": round(from_ath_pct, 2),
+                }
+            except Exception as e:
+                print(f"  ✗ {name}: {e}")
 
     except Exception as e:
         print(f"Error fetching index data: {e}")
