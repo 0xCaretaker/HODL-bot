@@ -125,17 +125,26 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
 
     for interval, all_signals in all_interval_signals.items():
         entries = []
+        total = 0
+        hold_count = 0
+        wait_count = 0
 
         for stock, info in all_signals.items():
             if stock not in bollinger_filter:
                 continue
             action, time, price = info["action"], info["time"], info["price"]
+            if action and time and price:
+                total += 1
+                if action == "Hold":
+                    hold_count += 1
+                elif action == "Wait for Buy":
+                    wait_count += 1
             if action in ["Buy", "Sell"] and time and price:
                 stock_clean = stock.replace(".NS", "").replace(".BO", "")
                 bb_status = bb_tag.get(bollinger_signals.get(stock, {}).get("action", ""), "")
                 entries.append((stock_clean, action, price, bb_status))
 
-        if not entries:
+        if not entries and total == 0:
             continue
 
         if "Impulse" in interval:
@@ -149,6 +158,14 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
             bb_str = f" _{escape_md(bb)}_" if bb else ""
             combined_lines.append(
                 f"{emoji[action]} `{escape_md(padded_stock)} ₹{escape_md(price_str)}`{bb_str}"
+            )
+
+        if total > 0:
+            hold_pct = (hold_count / total) * 100
+            wait_pct = (wait_count / total) * 100
+            combined_lines.append(
+                f"🟡 Hold: `{hold_count}/{total} \\({hold_pct:.0f}%\\)` "
+                f"🟣 Wait: `{wait_count}/{total} \\({wait_pct:.0f}%\\)`"
             )
 
     if len(combined_lines) <= 1:
