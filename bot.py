@@ -1,4 +1,5 @@
 import os
+import hashlib
 import requests
 import re
 from datetime import datetime, timezone, timedelta
@@ -191,11 +192,29 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
 
     final_message = "\n".join(combined_lines)
 
+    signal_content = "\n".join(combined_lines[1:])
+    current_hash = hashlib.sha256(signal_content.encode()).hexdigest()[:16]
+
+    hash_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".last_signal_hash")
+    prev_hash = ""
+    if os.path.exists(hash_file):
+        with open(hash_file, "r") as f:
+            prev_hash = f.read().strip()
+
     print("\n" + "=" * 60)
     print("TELEGRAM MESSAGE:")
     print("=" * 60)
     print(final_message)
-    print("=" * 60 + "\n")
+    print("=" * 60)
+
+    if current_hash == prev_hash:
+        print("⏭️  Skipping Telegram — signals unchanged from last run")
+        return
+
+    with open(hash_file, "w") as f:
+        f.write(current_hash)
+
+    print(f"📤 Sending to Telegram (hash: {current_hash})\n")
 
     for chat_id in TELEGRAM_CHAT_IDS:
         data = {
