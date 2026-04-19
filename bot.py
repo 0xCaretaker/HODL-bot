@@ -121,32 +121,21 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
             )
         combined_lines.append("")
 
-    # MACD Signals (filtered by Bollinger Bands)
+    bb_tag = {"Buy": "BB:Buy", "Watch": "BB:Watch"}
+
     for interval, all_signals in all_interval_signals.items():
         entries = []
-        total_stocks = 0
-        wait_for_buy_count = 0
-        hold_count = 0
 
         for stock, info in all_signals.items():
-            # Only process stocks that passed Bollinger filter
             if stock not in bollinger_filter:
                 continue
-                
             action, time, price = info["action"], info["time"], info["price"]
-
-            if action and time and price:
-                total_stocks += 1
-                if action == "Wait for Buy":
-                    wait_for_buy_count += 1
-                elif action == "Hold":
-                    hold_count += 1
-
             if action in ["Buy", "Sell"] and time and price:
                 stock_clean = stock.replace(".NS", "").replace(".BO", "")
-                entries.append((stock_clean, action, price))
+                bb_status = bb_tag.get(bollinger_signals.get(stock, {}).get("action", ""), "")
+                entries.append((stock_clean, action, price, bb_status))
 
-        if not entries and total_stocks == 0:
+        if not entries:
             continue
 
         if "Impulse" in interval:
@@ -154,29 +143,13 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
         else:
             combined_lines.append("\n🔵 *STANDARD MACD:*")
 
-        combined_lines.append(f"⏱️ `{escape_md(interval)}`")
-
-        for stock, action, price in entries:
+        for stock, action, price, bb in entries:
             padded_stock = stock.ljust(max_len)
             price_str = f"{price:.2f}"
+            bb_str = f" _{escape_md(bb)}_" if bb else ""
             combined_lines.append(
-                f"{emoji[action]} `{escape_md(padded_stock)} ₹{escape_md(price_str)}`"
+                f"{emoji[action]} `{escape_md(padded_stock)} ₹{escape_md(price_str)}`{bb_str}"
             )
-
-        if total_stocks > 0:
-            wait_pct = (wait_for_buy_count / total_stocks) * 100
-            hold_pct = (hold_count / total_stocks) * 100
-
-            summary = (
-                f"\n📈 *Summary:*  \n"
-                f"🟣 Wait for Buy: "
-                f"`{wait_for_buy_count}/{total_stocks} \\({wait_pct:.1f}%\\)`\n"
-                f"🟡 Hold: "
-                f"`{hold_count}/{total_stocks} \\({hold_pct:.1f}%\\)`\n"
-            )
-            combined_lines.append(summary)
-
-        combined_lines.append("")
 
     if len(combined_lines) <= 1:
         return
@@ -253,7 +226,14 @@ def main():
 
     bollinger_results = process_bollinger_signals(data, stocks, length=200)
 
-    # Print Bollinger Bands results to console
+    from bollinger_signals import colored_output as bb_colored_output
+
+    bollinger_filter = {
+        s for s, i in bollinger_results.items()
+        if i["action"] in ["Buy", "Watch"]
+    }
+
+    # Console: Bollinger Bands
     print("\n" + "=" * 60)
     print("BOLLINGER BANDS (Length=200)")
     print("=" * 60)
@@ -265,21 +245,42 @@ def main():
     if buy_signals:
         print("\n🟢 BUY SIGNALS:")
         for stock, info in buy_signals.items():
-            from bollinger_signals import colored_output as bb_colored_output
-            print(f"{stock} @ ₹{info['price']:.2f}: {bb_colored_output(info['action'])}")
+            print(f"  {stock:<20} ₹{info['price']:>10.2f}  {bb_colored_output(info['action'])}")
     else:
         print("\n🟢 No Buy signals at this time")
 
     if watch_signals:
         print("\n🟣 WATCH SIGNALS:")
         for stock, info in watch_signals.items():
-            from bollinger_signals import colored_output as bb_colored_output
-            print(f"{stock} @ ₹{info['price']:.2f}: {bb_colored_output(info['action'])}")
+            print(f"  {stock:<20} ₹{info['price']:>10.2f}  {bb_colored_output(info['action'])}")
     else:
         print("\n🟣 No Watch signals")
 
     print(f"\n🟡 HOLD: {len(hold_signals)} stocks")
 
+    # Console: MACD signals (full detail)
+    for interval, all_signals in all_interval_signals.items():
+        print("\n" + "=" * 60)
+        label = "IMPULSE MACD (LazyBear)" if "Impulse" in interval else "STANDARD MACD"
+        print(f"{label} — {interval}")
+        print("=" * 60)
+
+        grouped = {"Buy": [], "Sell": [], "Hold": [], "Wait for Buy": []}
+        for stock, info in all_signals.items():
+            action = info["action"]
+            if action in grouped:
+                bb = bollinger_results.get(stock, {}).get("action", "-")
+                grouped[action].append((stock, info["price"], bb))
+
+        for action_name, items in grouped.items():
+            if not items:
+                continue
+            print(f"\n  {colored_output(action_name)} ({len(items)}):")
+            for stock, price, bb in items:
+                in_filter = "✓" if stock in bollinger_filter else " "
+                print(f"    {in_filter} {stock:<20} ₹{price:>10.2f}  [BB:{bb}]")
+
+    print()
     send_bulk_telegram_message(all_interval_signals, bollinger_results, index_moves)
 
 
