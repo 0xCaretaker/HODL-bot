@@ -123,6 +123,8 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
 
     bb_tag = {"Buy": "BB:Buy", "Watch": "BB:Watch"}
 
+    sentiment_parts = []
+
     for interval, all_signals in all_interval_signals.items():
         entries = []
         total = 0
@@ -167,6 +169,22 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
                 f"🟡 Hold: `{hold_count}/{total} \\({hold_pct:.0f}%\\)` "
                 f"🟣 Wait: `{wait_count}/{total} \\({wait_pct:.0f}%\\)`"
             )
+            sentiment_parts.append((interval, hold_pct, wait_pct))
+
+    if sentiment_parts:
+        avg_hold = sum(h for _, h, _ in sentiment_parts) / len(sentiment_parts)
+        avg_wait = sum(w for _, _, w in sentiment_parts) / len(sentiment_parts)
+        if avg_hold >= 70:
+            mood, icon = "Bullish", "🟢"
+        elif avg_hold >= 40:
+            mood, icon = "Neutral", "🟡"
+        elif avg_wait >= 70:
+            mood, icon = "Bearish", "🔴"
+        else:
+            mood, icon = "Cautious", "🟠"
+        combined_lines.append(
+            f"\n{icon} *Sentiment: {mood}*"
+        )
 
     if len(combined_lines) <= 1:
         return
@@ -289,13 +307,30 @@ def main():
                 bb = bollinger_results.get(stock, {}).get("action", "-")
                 grouped[action].append((stock, info["price"], bb))
 
+        total = sum(len(v) for v in grouped.values())
         for action_name, items in grouped.items():
             if not items:
                 continue
-            print(f"\n  {colored_output(action_name)} ({len(items)}):")
+            pct = (len(items) / total) * 100 if total else 0
+            print(f"\n  {colored_output(action_name)} ({len(items)}/{total}, {pct:.0f}%):")
             for stock, price, bb in items:
                 in_filter = "✓" if stock in bollinger_filter else " "
                 print(f"    {in_filter} {stock:<20} ₹{price:>10.2f}  [BB:{bb}]")
+
+        if total > 0:
+            hold_n = len(grouped["Hold"])
+            wait_n = len(grouped["Wait for Buy"])
+            hold_pct = (hold_n / total) * 100
+            wait_pct = (wait_n / total) * 100
+            if hold_pct >= 70:
+                mood = "\033[92mBullish\033[0m"
+            elif hold_pct >= 40:
+                mood = "\033[93mNeutral\033[0m"
+            elif wait_pct >= 70:
+                mood = "\033[91mBearish\033[0m"
+            else:
+                mood = "\033[95mCautious\033[0m"
+            print(f"\n  Sentiment: {mood}")
 
     print()
     send_bulk_telegram_message(all_interval_signals, bollinger_results, index_moves)
