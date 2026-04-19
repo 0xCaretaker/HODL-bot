@@ -1,315 +1,158 @@
-# 📈 Stock Trading Signals Bot
+# Algorithmic Trading Bot — Crash-Buy Signals for Indian Equities (NSE)
 
-An automated stock trading signals system that combines **Bollinger Bands** and **MACD** indicators to identify potential trading opportunities in Indian stocks (NSE). The bot sends filtered signals directly to Telegram and runs automatically using GitHub Actions.
+An automated **algo-trading signal system** that identifies deeply undervalued stocks during market crashes using **200-period Bollinger Bands** and **dual MACD crossovers**, then delivers actionable buy signals with market sentiment to Telegram — fully automated via GitHub Actions.
 
-## 🎯 Features
+> **Philosophy**: Buy the crash, hold forever. This bot watches 60+ NSE stocks for you and alerts when they hit statistically extreme lows with confirmed momentum reversal. No day-trading, no exits — just long entries at high-conviction dips.
 
-- **Bollinger Bands Analysis** (200-period)
-  - Identifies when price touches or breaks below the lower band
-  - Detects recent lower band touches (30-day lookback)
-  - Generates "Buy" and "Watch" signals
+---
 
-- **Dual MACD Indicators**
-  - Standard MACD (12, 26, 9)
-  - Impulse MACD (LazyBear's implementation)
-  - Crossover-based Buy/Sell signals
-
-- **Smart Filtering**
-  - Only shows MACD signals for stocks with Bollinger "Buy" or "Watch" signals
-  - Reduces noise and focuses on high-probability setups
-
-- **Market Context**
-  - NIFTY 50 and NIFTY Midcap 100 movements
-  - Distance from All-Time High (ATH)
-
-- **Automated Delivery**
-  - Telegram notifications with formatted signals
-  - Runs automatically via GitHub Actions
-  - Supports multiple recipients
-
-## 📊 How It Works
-
-### Signal Generation Logic
-
-1. **Bollinger Bands Filter** (Primary Filter)
-   - **Buy**: Price touches or breaks below the 200-period lower Bollinger Band
-   - **Watch**: Price previously touched the lower band in the last 30 days
-   - **Hold**: No recent interaction with the lower band
-
-2. **MACD Confirmation** (Secondary Signals)
-   - Only stocks passing the Bollinger filter are analyzed
-   - **Standard MACD**: Traditional 12/26/9 crossover signals
-   - **Impulse MACD**: LazyBear's variant using HLC/3 smoothing
-   - Generates Buy, Sell, Hold, and "Wait for Buy" signals
-
-3. **Final Output**
-   - Console: Full Bollinger Bands results
-   - Telegram: MACD signals for Bollinger-filtered stocks only
-
-## 🚀 Setup
-
-### Prerequisites
-
-- Python 3.8+
-- Telegram Bot Token
-- GitHub account (for automated runs)
-
-### Local Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone <your-repo-url>
-   cd stock-signals-bot
-   ```
-
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure your stock list**
-   
-   Edit `stocks.txt` and add stock symbols (one per line, without `.NS` suffix):
-   ```
-   RELIANCE
-   TCS
-   INFY
-   HDFCBANK
-   ```
-
-4. **Set up Telegram Bot**
-   
-   Edit `bot.py` and update:
-   ```python
-   TELEGRAM_TOKEN = "your_bot_token_here"
-   TELEGRAM_CHAT_IDS = ["your_chat_id_here"]
-   ```
-
-5. **Run the bot**
-   ```bash
-   python bot.py
-   ```
-
-### GitHub Actions Setup
-
-1. **Fork/Create the repository** with these files:
-   - `bot.py`
-   - `macd_signals.py`
-   - `bollinger_signals.py`
-   - `requirements.txt`
-   - `stocks.txt`
-
-2. **Create GitHub Action workflow**
-   
-   Create `.github/workflows/signals.yml`:
-   ```yaml
-   name: Stock Signals Bot
-
-   on:
-     schedule:
-       # Runs at 3:45 PM IST (10:15 AM UTC) on weekdays
-       - cron: '15 10 * * 1-5'
-     workflow_dispatch:  # Allows manual trigger
-
-   jobs:
-     run-bot:
-       runs-on: ubuntu-latest
-       
-       steps:
-       - name: Checkout code
-         uses: actions/checkout@v3
-       
-       - name: Set up Python
-         uses: actions/setup-python@v4
-         with:
-           python-version: '3.10'
-       
-       - name: Install dependencies
-         run: |
-           pip install -r requirements.txt
-       
-       - name: Run signals bot
-         run: |
-           python bot.py
-   ```
-
-3. **Configure Telegram credentials**
-   
-   Option A: Direct in code (less secure)
-   - Edit `bot.py` with your token and chat IDs
-
-   Option B: GitHub Secrets (recommended)
-   - Go to Settings → Secrets and variables → Actions
-   - Add secrets: `TELEGRAM_TOKEN` and `TELEGRAM_CHAT_ID`
-   - Modify `bot.py` to read from environment variables:
-     ```python
-     import os
-     TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', 'fallback_token')
-     TELEGRAM_CHAT_IDS = [os.getenv('TELEGRAM_CHAT_ID', 'fallback_id')]
-     ```
-
-4. **Commit and push**
-   ```bash
-   git add .
-   git commit -m "Setup stock signals bot"
-   git push
-   ```
-
-5. **Verify automation**
-   - Go to Actions tab in GitHub
-   - The workflow will run at scheduled time
-   - Or click "Run workflow" to test manually
-
-## 📁 File Structure
+## How It Works
 
 ```
-stock-signals-bot/
-├── bot.py                  # Main orchestrator + Telegram sender
-├── macd_signals.py         # MACD calculations (Standard + Impulse)
-├── bollinger_signals.py    # Bollinger Bands calculations
-├── requirements.txt        # Python dependencies
-├── stocks.txt             # List of stock symbols to monitor
-├── .github/
-│   └── workflows/
-│       └── signals.yml    # GitHub Actions configuration
-└── README.md              # This file
+┌─────────────────────────────────────┐
+│         stocks.txt (watchlist)      │
+└──────────────┬──────────────────────┘
+               ▼
+┌─────────────────────────────────────┐
+│     yfinance — 1yr daily OHLCV     │
+└──────────────┬──────────────────────┘
+               ▼
+┌─────────────────────────────────────┐
+│  Bollinger Bands (200-period, 2σ)  │
+│  ┌─────┐  ┌───────┐  ┌──────┐     │
+│  │ Buy │  │ Watch │  │ Hold │     │
+│  └──┬──┘  └───┬───┘  └──┬───┘     │
+│     │         │         │ filtered │
+│     ▼         ▼         ✗ out     │
+│  ┌─────────────────┐              │
+│  │   MACD Filter   │              │
+│  │  Standard 12/26 │              │
+│  │  Impulse MACD   │              │
+│  └────────┬────────┘              │
+└───────────┼────────────────────────┘
+            ▼
+┌─────────────────────────────────────┐
+│  Sentiment (Hold/Wait for Buy %)   │
+│  Bullish · Neutral · Cautious ·    │
+│  Bearish                           │
+└──────────────┬──────────────────────┘
+               ▼
+┌─────────────────────────────────────┐
+│     Telegram (if signals changed)  │
+└─────────────────────────────────────┘
 ```
 
-## 🔧 Configuration
+### Signal Logic
 
-### Adjust Signal Parameters
+| Stage | Indicator | Signal | Meaning |
+|---|---|---|---|
+| **Gate** | Bollinger Bands (200, 2σ) | Buy | Price at or below lower band today |
+| | | Watch | Touched lower band in last 30 days |
+| | | Hold | No recent lower band interaction — **filtered out** |
+| **Signal** | Standard MACD (12/26/9) | Buy/Sell | Crossover on current bar |
+| | Impulse MACD (LazyBear) | Buy/Sell | SMMA + ZLEMA crossover on current bar |
+| | Both | Hold / Wait for Buy | Between crossovers |
+| **Context** | NIFTY 50 + Midcap 100 | % move, % from ATH | Market-wide context |
+| **Sentiment** | Hold vs Wait ratio | Bullish/Neutral/Cautious/Bearish | Aggregate market mood |
 
-**Bollinger Bands** (`bollinger_signals.py`):
-```python
-length = 200        # Moving average period
-std_dev = 2         # Standard deviations
-lookback = 30       # Days to check for past touches
-```
+### Deduplication
 
-**Standard MACD** (`macd_signals.py`):
-```python
-fast = 12
-slow = 26
-signal = 9
-```
+Signals are hashed each run. If unchanged from the previous run, Telegram notifications are skipped — no spam during sideways markets.
 
-**Impulse MACD** (`macd_signals.py`):
-```python
-length_ma = 34
-length_signal = 9
-```
-
-### Schedule Timing
-
-Edit `.github/workflows/signals.yml` cron expression:
-```yaml
-# Examples:
-- cron: '15 10 * * 1-5'  # 3:45 PM IST, Mon-Fri
-- cron: '30 3 * * 1-5'   # 9:00 AM IST, Mon-Fri
-- cron: '0 6 * * *'      # 11:30 AM IST, daily
-```
-
-**Cron format**: `minute hour day month day-of-week`
-
-> ⚠️ **Note**: GitHub Actions uses UTC time. IST = UTC + 5:30
-
-### Add More Stocks
-
-Simply add new symbols to `stocks.txt` (one per line):
-```
-TATAMOTORS
-WIPRO
-ICICIBANK
-```
-
-## 📱 Telegram Message Format
+## Sample Output
 
 ```
-📊 Signal Alert | [09 February, 03:45PM]
-
-🔺 NIFTY 50: +0.45% (from ATH: -8.23%)
-🔻 NIFTY Midcap 100: -0.12% (from ATH: -15.67%)
+📊 Signal Alert | 19 April, 03:15PM
+🔻 NIFTY 50: -3.42% (from ATH: -18.50%)
+🔻 NIFTY Midcap 100: -4.10% (from ATH: -25.30%)
+🔴 Sentiment: Bearish
 
 🔵 STANDARD MACD:
 ⏱️ 1d
-🟢 RELIANCE   ₹2,450.50
-🟢 TCS        ₹3,890.25
+🟢 SUZLON      ₹38.50
+🟢 GRSE        ₹1850.00
 
 📈 Summary:
-🟣 Wait for Buy: 5/15 (33.3%)
-🟡 Hold: 10/15 (66.7%)
+🟣 Wait for Buy: 25/34 (73.5%)
+🟡 Hold: 7/34 (20.6%)
 
 🟠 IMPULSE MACD (LazyBear):
-⏱️ 1d
-🟢 INFY       ₹1,567.80
-🔴 WIPRO      ₹445.90
+⏱️ 1d Impulse MACD
+🟢 SUZLON      ₹38.50
+🟢 GRSE        ₹1850.00
+🟢 AIIL        ₹320.00
 
 📈 Summary:
-🟣 Wait for Buy: 8/15 (53.3%)
-🟡 Hold: 7/15 (46.7%)
+🟣 Wait for Buy: 28/34 (82.4%)
+🟡 Hold: 4/34 (11.8%)
 ```
 
-## 🖥️ Console Output
+## Quick Start
 
-When running locally, you'll see detailed Bollinger Bands analysis:
+### 1. Fork & configure secrets
 
+Go to **Settings > Secrets and variables > Actions** and add:
+
+| Secret | Value |
+|---|---|
+| `TELEGRAM_TOKEN` | Your bot token from [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_CHAT_IDS` | Comma-separated chat IDs |
+
+### 2. Edit your watchlist
+
+`stocks.txt` — one NSE symbol per line, without `.NS`:
 ```
-=============================================================
-BOLLINGER BANDS (Length=200)
-=============================================================
-
-🟢 BUY SIGNALS:
-RELIANCE.NS @ ₹2,450.50: Buy
-TCS.NS @ ₹3,890.25: Buy
-
-🟣 WATCH SIGNALS:
-INFY.NS @ ₹1,567.80: Watch
-WIPRO.NS @ ₹445.90: Watch
-
-🟡 HOLD: 45 stocks
+RELIANCE
+TCS
+INFY
 ```
 
-## 🛠️ Standalone Usage
+### 3. Done
 
-Each module can run independently:
+The bot runs automatically:
+- **Weekdays**: every hour, 9:15 AM – 3:15 PM IST (market hours)
+- **Weekends**: once at 10:15 AM IST
 
-### Bollinger Bands Only
+Or trigger manually: **Actions tab → Run workflow**
+
+### Local run
+
 ```bash
-python bollinger_signals.py
-```
-
-### MACD Signals Only
-```bash
-python macd_signals.py
-```
-
-### Full Bot with Telegram
-```bash
+pip install -r requirements.txt
+export TELEGRAM_TOKEN="your_token"
+export TELEGRAM_CHAT_IDS="id1,id2"
 python bot.py
 ```
 
-## 📊 Data Source
+## Architecture
 
-- Uses **yfinance** library to fetch historical data
-- NSE stocks: Automatically appends `.NS` suffix
-- BSE stocks: Use `.BO` suffix in `stocks.txt`
-- Data period: 1 year of daily candles
+```
+├── bot.py                 # Orchestrator, Telegram sender, sentiment
+├── macd_signals.py        # Standard + Impulse MACD (standalone capable)
+├── bollinger_signals.py   # 200-period Bollinger Bands (standalone capable)
+├── stocks.txt             # Watchlist
+├── requirements.txt       # yfinance, requests
+└── .github/workflows/
+    └── hodl.yml           # GitHub Actions (cron + cache)
+```
 
-## ⚠️ Important Notes
+Each signal module can run standalone for quick analysis:
+```bash
+python bollinger_signals.py   # Bollinger only
+python macd_signals.py        # MACD only
+```
 
-1. **Not Financial Advice**: This bot is for educational purposes. Always do your own research before trading.
+## Configuration
 
-2. **Market Hours**: Best run after market close (3:30 PM IST) for accurate signals.
+| Parameter | File | Default |
+|---|---|---|
+| BB period | `bollinger_signals.py` | 200 |
+| BB std dev | `bollinger_signals.py` | 2 |
+| BB watch window | `bollinger_signals.py` | 30 bars |
+| MACD fast/slow/signal | `macd_signals.py` | 12/26/9 |
+| Impulse MA length | `macd_signals.py` | 34 |
+| Impulse signal length | `macd_signals.py` | 9 |
 
-3. **Data Limitations**: Free data from yfinance may have occasional gaps or delays.
+## Disclaimer
 
-4. **GitHub Actions Limits**: 
-   - Free tier: 2,000 minutes/month
-   - This bot uses ~2-5 minutes per run
-   - Running daily = ~100-150 minutes/month
-
-5. **Rate Limits**: 
-   - yfinance may throttle excessive requests
-   - Keep stock list under 100 symbols for reliability
-
-**Happy Trading! 📈**
+This is not financial advice. The bot generates signals for educational and research purposes. Always do your own due diligence before making investment decisions.
