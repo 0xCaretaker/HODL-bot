@@ -2,7 +2,8 @@ name: HODL Signal Bot
 
 on:
   schedule:
-    - cron: '45 3-9 * * *'  # Every hour from 09:15 to 15:15 IST, every day
+    - cron: '45 3-9 * * 1-5'  # Every hour from 09:15 to 15:15 IST, weekdays
+    - cron: '45 4 * * 0,6'    # Once at 10:15 IST on weekends
   workflow_dispatch:
 
 jobs:
