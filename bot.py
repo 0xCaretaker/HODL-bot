@@ -211,8 +211,15 @@ def send_bulk_telegram_message(all_interval_signals, bollinger_signals, index_mo
 
     final_message = "\n".join(combined_lines)
 
-    signal_content = "\n".join(combined_lines[1:])
-    current_hash = hashlib.sha256(signal_content.encode()).hexdigest()[:16]
+    # Hash raw signal data (actions + prices) — independent of formatting/timestamps
+    signal_data = []
+    for interval, all_signals in all_interval_signals.items():
+        for stock in sorted(all_signals):
+            info = all_signals[stock]
+            signal_data.append(f"{interval}:{stock}:{info['action']}:{info['price']:.2f}")
+    for stock in sorted(bollinger_signals):
+        signal_data.append(f"BB:{stock}:{bollinger_signals[stock]['action']}")
+    current_hash = hashlib.sha256("\n".join(signal_data).encode()).hexdigest()[:16]
 
     hash_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".last_signal_hash")
     prev_hash = ""
