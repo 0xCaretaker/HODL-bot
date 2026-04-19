@@ -26,3 +26,8 @@
 - [ ] Add weekly MACD alongside daily
 - [ ] Highlight when daily + weekly MACD align (stronger signal)
 - [ ] Separate section or tag in Telegram output
+
+## Integrate Fundamental Screener
+- [ ] Bring the external fundamental analysis tool into this repo
+- [ ] Auto-refresh `stocks.txt` from screener output on a schedule
+- [ ] Full pipeline: fundamental screen → technical timing → Telegram
