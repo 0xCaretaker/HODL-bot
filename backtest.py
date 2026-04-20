@@ -323,13 +323,25 @@ def compute_metrics(series, name, cashflows=None):
             "calmar": calmar, "volatility": dr.std()*np.sqrt(252)*100, "best_day": dr.max()*100, "worst_day": dr.min()*100}
 
 
-def _equal_weight_returns(stock_dfs, symbols):
-    closes = {}
-    for s in symbols:
-        if s in stock_dfs:
-            closes[s] = stock_dfs[s]["Close"]
-    df = pd.DataFrame(closes)
-    return df.pct_change().mean(axis=1).dropna()
+def _compute_nav(sim_df, cashflows):
+    cf_map = {}
+    for dt, amt in cashflows:
+        cf_map[dt] = cf_map.get(dt, 0) + abs(amt)
+
+    nav_vals = []
+    units = 0.0
+    for i in range(len(sim_df)):
+        dt = sim_df.index[i]
+        portfolio = sim_df["portfolio"].iloc[i]
+        inflow = cf_map.get(dt, 0)
+
+        if inflow > 0:
+            cur_nav = (portfolio - inflow) / units if units > 0 else 100.0
+            units += inflow / cur_nav
+
+        cur_nav = portfolio / units if units > 0 else 100.0
+        nav_vals.append(cur_nav)
+    return pd.Series(nav_vals, index=sim_df.index)
 
 
 # ─── Charts ─────────────────────────────────────────────────────────────────
@@ -424,11 +436,11 @@ def chart_3_cash(timed_sim, exit_sim, filename):
     plt.close(fig)
 
 
-def chart_4_regimes(stock_dfs, symbols, nifty_series, filename):
-    strats = ["Your Stocks (Equal-Wt)", LABEL_NIFTY] if nifty_series is not None else ["Your Stocks (Equal-Wt)"]
-    colors = {"Your Stocks (Equal-Wt)": C_TIMED, LABEL_NIFTY: C_NIFTY}
-
-    ew_returns = _equal_weight_returns(stock_dfs, symbols)
+def chart_4_regimes(nav_series, nifty_price, filename):
+    strats = [LABEL_TIMED, LABEL_SIP]
+    if nifty_price is not None:
+        strats.append(LABEL_NIFTY)
+    colors = {LABEL_TIMED: C_TIMED, LABEL_SIP: C_SIP, LABEL_NIFTY: C_NIFTY}
 
     regime_names = list(REGIMES.keys())
     data_rows = []
@@ -437,16 +449,16 @@ def chart_4_regimes(stock_dfs, symbols, nifty_series, filename):
         row = {"regime": rname, "type": rtype}
         for sname in strats:
             if sname == LABEL_NIFTY:
-                pf = nifty_series
-                if pf is None: row[sname] = np.nan; continue
-                sub = pf[(pf.index >= start) & (pf.index <= end)]
-                if len(sub) >= 2:
-                    row[sname] = (sub.iloc[-1] / sub.iloc[0] - 1) * 100
-                else:
-                    row[sname] = np.nan
+                pf = nifty_price
             else:
-                sub = ew_returns[(ew_returns.index >= start) & (ew_returns.index <= end)]
-                row[sname] = ((1 + sub).prod() - 1) * 100 if len(sub) >= 2 else np.nan
+                pf = nav_series.get(sname)
+            if pf is None:
+                row[sname] = np.nan; continue
+            sub = pf[(pf.index >= start) & (pf.index <= end)]
+            if len(sub) >= 2:
+                row[sname] = (sub.iloc[-1] / sub.iloc[0] - 1) * 100
+            else:
+                row[sname] = np.nan
         data_rows.append(row)
 
     x = np.arange(len(regime_names))
@@ -800,7 +812,10 @@ def main():
     chart_3_cash(timed_sim, exit_sim, "3_cash_utilization.png")
     nifty_raw = yf.download("^NSEI", start=cfg["start"], end=cfg["end"], progress=False)
     nifty_price = flatten_cols(nifty_raw)["Close"].dropna() if not nifty_raw.empty else None
-    chart_4_regimes(stock_dfs, sig_syms, nifty_price, "4_regime_returns.png")
+    nav_timed = _compute_nav(timed_sim, timed_cf)
+    nav_sip = _compute_nav(sip_sim, sip_cf)
+    nav_series = {LABEL_TIMED: nav_timed, LABEL_SIP: nav_sip}
+    chart_4_regimes(nav_series, nifty_price, "4_regime_returns.png")
     chart_5_rolling_alpha(portfolios, "5_rolling_alpha.png")
     chart_6_buy_distribution(buy_log, len(sig_syms), "6_buy_distribution.png")
     chart_7_buy_timeline(buy_log, "7_buy_timeline.png")

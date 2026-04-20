@@ -18,13 +18,13 @@ Long-only signal bot for NSE stocks: BB + Impulse MACD timing strategy with Tele
 - `bot.py` — single entry point. Downloads all tickers once via `yf.download`, passes shared DataFrame to signal modules. Sends MarkdownV2 Telegram messages.
 - `bollinger_signals.py` — BB 200-period, 2σ. Gate filter: Buy/Watch/Hold.
 - `macd_signals.py` — Standard MACD (12/26/9) + Impulse MACD (LazyBear, SMMA/ZLEMA, length=34, signal=9). Crossover → Buy/Sell/Hold/Wait.
-- `backtest.py` — Portfolio-level backtest. Reads stocks.txt, downloads via yfinance, runs 3 strategies + NIFTY 50. Outputs 8 numbered PNG charts + console summary.
+- `backtest.py` — Portfolio-level backtest. Reads stocks.txt, downloads via yfinance, runs 3 strategies + NIFTY 50. Outputs 8 numbered PNG charts + console summary + trade log CSVs.
 
 # Backtest Charts (backtest_output/)
 1. `1_equity_curves.png` — All strategies + NIFTY 50 + invested line on one chart
 2. `2_drawdowns.png` — Side-by-side drawdowns with max annotated
 3. `3_cash_utilization.png` — % invested vs cash over time
-4. `4_regime_returns.png` — Bar chart of returns during bull/bear/sideways/recovery
+4. `4_regime_returns.png` — NAV-based returns per regime (strips out cash flow effects) for all 3 strategies
 5. `5_rolling_alpha.png` — 1Y and 3Y rolling outperformance vs SIP
 6. `6_buy_distribution.png` — Which stocks got bought and how often
 7. `7_buy_timeline.png` — When buys happened over time
@@ -42,7 +42,7 @@ Long-only signal bot for NSE stocks: BB + Impulse MACD timing strategy with Tele
 - `bot.py` — production entry point
 - `backtest.py` — portfolio-level backtest (run: `python3 backtest.py`)
 - `stocks.txt` — watchlist (62 symbols, no `.NS` suffix)
-- `backtest_output/` — 8 numbered PNG charts
+- `backtest_output/` — 8 numbered PNG charts + trades.csv + trades_monthly_summary.csv
 - `.github/workflows/hodl.yml` — cron schedule
 - `requirements.txt` — yfinance, requests (backtest also needs matplotlib, scipy)
 
