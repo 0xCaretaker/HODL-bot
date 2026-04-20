@@ -24,7 +24,9 @@ Long-only signals for NSE stocks listed in `stocks.txt` (symbols without `.NS` s
 
    Both feed `_trend_to_action`, which walks the crossover series and emits the *latest* state: `Buy`/`Sell` on the crossover bar, then `Hold` (after Buy) or `Wait for Buy` (after Sell) until the next cross. Only `Buy`/`Sell` rows render as stock lines in Telegram; `Hold`/`Wait for Buy` are counted into the summary.
 
-3. **Telegram delivery** (`bot.py:send_bulk_telegram_message`). MarkdownV2, sent to multiple chat IDs. Two sections: Standard MACD and Impulse MACD, each restricted to the Bollinger-filtered universe. Header includes NIFTY 50 and NIFTY Midcap 100 day move + % from ATH (`get_index_moves`).
+3. **Fallback averaging** (backtest only, `simulate_timed_hodl`). If cash sits idle for >42 trading days (~2 months), deploy it equally into existing holdings where price is below the BB midline (200-SMA). Each stock is capped at 15% of portfolio value to prevent concentration. This reduces cash drag without buying overvalued positions.
+
+4. **Telegram delivery** (`bot.py:send_bulk_telegram_message`). MarkdownV2, sent to multiple chat IDs. Two sections: Standard MACD and Impulse MACD, each restricted to the Bollinger-filtered universe. Header includes NIFTY 50 and NIFTY Midcap 100 day move + % from ATH (`get_index_moves`).
 
 ## Architecture notes
 

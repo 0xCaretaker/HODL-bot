@@ -113,7 +113,8 @@ def bb_signals(df, length=200, std_dev=2, lookback=30):
     sig = pd.Series("Hold", index=df.index)
     sig.values[touch] = "Buy"
     sig.values[~touch & past] = "Watch"
-    return sig
+    bb_mid = pd.Series(mid, index=df.index)
+    return sig, bb_mid
 
 def impulse_macd_signals(df, length_ma=34, length_signal=9):
     high, low, close = to_1d(df["High"]), to_1d(df["Low"]), to_1d(df["Close"])
@@ -138,14 +139,15 @@ def impulse_macd_signals(df, length_ma=34, length_signal=9):
 
 def generate_all_signals(stock_dfs, cfg):
     min_bars = cfg["bb_length"] + cfg["bb_lookback"] + 50
-    bb, imp, imp_st, skipped = {}, {}, {}, []
+    bb, bb_mid, imp, imp_st, skipped = {}, {}, {}, {}, []
     for sym, df in stock_dfs.items():
         if len(df) < min_bars:
             skipped.append(sym); continue
-        bb[sym] = bb_signals(df, cfg["bb_length"], cfg["bb_std"], cfg["bb_lookback"])
+        sig, mid = bb_signals(df, cfg["bb_length"], cfg["bb_std"], cfg["bb_lookback"])
+        bb[sym] = sig; bb_mid[sym] = mid
         s, st = impulse_macd_signals(df, cfg["impulse_length_ma"], cfg["impulse_length_signal"])
         imp[sym] = s; imp_st[sym] = st
-    return bb, imp, imp_st, skipped
+    return bb, bb_mid, imp, imp_st, skipped
 
 
 # ─── Monthly investment schedule ────────────────────────────────────────────
@@ -205,11 +207,13 @@ def simulate_sip(stock_dfs, symbols, monthly_inv, slippage_bps=5):
         records.append({"date": dt, "portfolio": _portfolio_value(holdings, last_price, symbols, cash), "cash": cash})
     return pd.DataFrame(records).set_index("date"), cashflows
 
-def simulate_timed_hodl(stock_dfs, symbols, monthly_inv, bb_sig, imp_sig, slippage_bps=5):
+def simulate_timed_hodl(stock_dfs, symbols, monthly_inv, bb_sig, bb_mid, imp_sig, slippage_bps=5,
+                        idle_threshold=42, max_stock_pct=0.15):
     dates = get_all_dates(stock_dfs, symbols)
     holdings = {s: 0.0 for s in symbols}
     last_price = {s: 0.0 for s in symbols}
     cash = 0.0
+    idle_days = 0
     done_months = set()
     records, cashflows, buy_log = [], [], []
     for dt in dates:
@@ -218,6 +222,7 @@ def simulate_timed_hodl(stock_dfs, symbols, monthly_inv, bb_sig, imp_sig, slippa
         if key in monthly_inv and key not in done_months:
             amt = monthly_inv[key]["amount"]
             cash += amt; done_months.add(key); cashflows.append((dt, -amt))
+        bought = False
         if cash > 0:
             buying = [s for s in symbols
                       if s in bb_sig and s in imp_sig
@@ -227,8 +232,32 @@ def simulate_timed_hodl(stock_dfs, symbols, monthly_inv, bb_sig, imp_sig, slippa
                 per = cash / len(buying)
                 for s in buying:
                     holdings[s] += per / (last_price[s] * (1 + slippage_bps / 10000))
-                    buy_log.append({"date": dt, "stock": s, "price": last_price[s], "amount": per})
-                cash = 0.0
+                    buy_log.append({"date": dt, "stock": s, "price": last_price[s], "amount": per, "type": "signal"})
+                cash = 0.0; bought = True; idle_days = 0
+        if cash > 0:
+            idle_days += 1
+            if idle_days >= idle_threshold:
+                port_val = _portfolio_value(holdings, last_price, symbols, cash)
+                candidates = [s for s in symbols
+                              if holdings[s] > 0 and last_price[s] > 0
+                              and s in bb_mid and dt in bb_mid[s].index
+                              and not np.isnan(bb_mid[s].loc[dt])
+                              and last_price[s] < bb_mid[s].loc[dt]]
+                if candidates:
+                    remaining = cash
+                    per = remaining / len(candidates)
+                    for s in candidates:
+                        cur_val = holdings[s] * last_price[s]
+                        max_val = port_val * max_stock_pct
+                        headroom = max(0, max_val - cur_val)
+                        alloc = min(per, headroom)
+                        if alloc > 0:
+                            holdings[s] += alloc / (last_price[s] * (1 + slippage_bps / 10000))
+                            buy_log.append({"date": dt, "stock": s, "price": last_price[s], "amount": alloc, "type": "fallback"})
+                            remaining -= alloc
+                    cash = remaining; idle_days = 0
+        elif bought:
+            idle_days = 0
         records.append({"date": dt, "portfolio": _portfolio_value(holdings, last_price, symbols, cash), "cash": cash})
     return pd.DataFrame(records).set_index("date"), cashflows, buy_log
 
@@ -563,7 +592,7 @@ def chart_7_buy_timeline(buy_log, filename):
     plt.close(fig)
 
 
-def chart_8_summary_table(metrics_list, total_invested, n_stocks, n_signals, n_stocks_bought, assumptions, filename):
+def chart_8_summary_table(metrics_list, total_invested, n_stocks, n_signals, n_stocks_bought, assumptions, filename, max_idle=0, avg_idle=0):
     a = assumptions
     fig = plt.figure(figsize=(14, 11))
     gs = GridSpec(2, 1, height_ratios=[1, 3.5], hspace=0.05)
@@ -636,7 +665,8 @@ def chart_8_summary_table(metrics_list, total_invested, n_stocks, n_signals, n_s
                 best_j = numeric.index(fn(valid))
                 table[i+1, best_j].set_text_props(fontweight="bold", color=colors_header[best_j])
 
-    ax.set_title(f"Performance Summary — {n_stocks} Stocks, {n_signals} Buy Signals, {n_stocks_bought} Stocks Bought",
+    ax.set_title(f"Performance Summary — {n_stocks} Stocks, {n_signals} Buy Signals, {n_stocks_bought} Stocks Bought\n"
+                 f"Cash idle: longest {max_idle} days (~{max_idle/21:.1f}mo), avg {avg_idle:.0f} days (~{avg_idle/21:.1f}mo)",
                  fontsize=14, fontweight="bold", pad=10)
     fig.savefig(os.path.join(OUTPUT_DIR, filename), dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -665,7 +695,7 @@ def compute_investment_assumptions(cfg, dates):
         "end_date": end.date(),
     }
 
-def print_summary(metrics_list, total_invested, n_stocks, n_signals, n_bought, cash_pct, assumptions):
+def print_summary(metrics_list, total_invested, n_stocks, n_signals, n_bought, cash_pct, assumptions, max_idle=0, avg_idle=0, n_fallback=0, idle_threshold=42):
     a = assumptions
     print(f"\n{'═'*100}")
     print(f"  INVESTMENT ASSUMPTIONS")
@@ -700,6 +730,9 @@ def print_summary(metrics_list, total_invested, n_stocks, n_signals, n_bought, c
 
     print(f"\n  Buy signals fired on {n_signals} days across {n_bought}/{n_stocks} stocks")
     print(f"  Cash drag (Your Strategy): {cash_pct:.1f}%")
+    print(f"  Cash idle — longest: {max_idle} trading days (~{max_idle/21:.1f} months), average: {avg_idle:.0f} trading days (~{avg_idle/21:.1f} months)")
+    if n_fallback > 0:
+        print(f"  Fallback buys: {n_fallback} (averaging into held stocks below BB midline after {idle_threshold} idle days)")
 
 
 # ─── Trade log ─────────────────────────────────────────────────────────────
@@ -713,6 +746,7 @@ def write_trade_log(buy_log, exit_trade_log, monthly_inv, timed_sim, filename):
             "month": b["date"].month,
             "strategy": "Timed HODL",
             "action": "BUY",
+            "buy_type": b.get("type", "signal"),
             "stock": b["stock"].replace(".NS", ""),
             "price": round(b["price"], 2),
             "amount": round(b["amount"], 2),
@@ -770,7 +804,7 @@ def main():
     stock_dfs = download_batch(symbols, cfg)
     print(f"  Downloaded: {len(stock_dfs)}/{len(symbols)} stocks")
 
-    bb_sig, imp_sig, imp_state, skipped = generate_all_signals(stock_dfs, cfg)
+    bb_sig, bb_mid, imp_sig, imp_state, skipped = generate_all_signals(stock_dfs, cfg)
     sig_syms = list(bb_sig.keys())
     print(f"  Signals: {len(sig_syms)} stocks ready ({len(skipped)} skipped, insufficient data)")
 
@@ -783,7 +817,7 @@ def main():
 
     print(f"\n  Simulating strategies...")
     sip_sim, sip_cf = simulate_sip(stock_dfs, sig_syms, monthly_inv, cfg["slippage_bps"])
-    timed_sim, timed_cf, buy_log = simulate_timed_hodl(stock_dfs, sig_syms, monthly_inv, bb_sig, imp_sig, cfg["slippage_bps"])
+    timed_sim, timed_cf, buy_log = simulate_timed_hodl(stock_dfs, sig_syms, monthly_inv, bb_sig, bb_mid, imp_sig, cfg["slippage_bps"])
     exit_sim, exit_cf, trade_log = simulate_timed_exit(stock_dfs, sig_syms, monthly_inv, bb_sig, imp_sig, imp_state, cfg["slippage_bps"])
     nifty_sim, nifty_cf = simulate_nifty_sip(cfg, monthly_inv)
 
@@ -800,11 +834,23 @@ def main():
     cash_total = timed_sim["portfolio"].replace(0, np.nan)
     cash_pct = (timed_sim["cash"] / cash_total * 100).fillna(100).mean()
 
+    cash_idle = timed_sim["cash"] > 0
+    streaks, cur = [], 0
+    for v in cash_idle:
+        if v: cur += 1
+        else:
+            if cur > 0: streaks.append(cur)
+            cur = 0
+    if cur > 0: streaks.append(cur)
+    max_idle = max(streaks) if streaks else 0
+    avg_idle = np.mean(streaks) if streaks else 0
+
     metrics_list = [m_timed, m_sip, m_exit]
     if m_nifty: metrics_list.append(m_nifty)
 
     assumptions = compute_investment_assumptions(cfg, dates)
-    print_summary(metrics_list, total_invested, len(sig_syms), len(buy_dates), len(stocks_bought), cash_pct, assumptions)
+    n_fallback = sum(1 for b in buy_log if b.get("type") == "fallback")
+    print_summary(metrics_list, total_invested, len(sig_syms), len(buy_dates), len(stocks_bought), cash_pct, assumptions, max_idle, avg_idle, n_fallback)
 
     print(f"\n  Generating charts...")
     chart_1_equity(portfolios, nifty_series, total_invested, "1_equity_curves.png")
@@ -819,7 +865,7 @@ def main():
     chart_5_rolling_alpha(portfolios, "5_rolling_alpha.png")
     chart_6_buy_distribution(buy_log, len(sig_syms), "6_buy_distribution.png")
     chart_7_buy_timeline(buy_log, "7_buy_timeline.png")
-    chart_8_summary_table(metrics_list, total_invested, len(sig_syms), len(buy_dates), len(stocks_bought), assumptions, "8_summary_table.png")
+    chart_8_summary_table(metrics_list, total_invested, len(sig_syms), len(buy_dates), len(stocks_bought), assumptions, "8_summary_table.png", max_idle, avg_idle)
 
     write_trade_log(buy_log, trade_log, monthly_inv, timed_sim, os.path.join(OUTPUT_DIR, "trades.csv"))
 
