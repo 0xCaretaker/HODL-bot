@@ -128,6 +128,73 @@ export TELEGRAM_CHAT_IDS="id1,id2"
 python bot.py
 ```
 
+## Backtest
+
+A portfolio-level backtest validates the timing strategy against plain SIP investing. All stocks in `stocks.txt` share a single monthly budget — the point of 60+ stocks is that something is always dipping, keeping cash deployed.
+
+### Run it
+
+```bash
+pip install matplotlib scipy  # one-time, in addition to requirements.txt
+python3 backtest.py
+```
+
+Generates 8 charts in `backtest_output/` + console summary.
+
+### Latest Results (61 stocks, 2002–2026, ₹27.5L invested)
+
+```
+════════════════════════════════════════════════════════════════════════════════
+  RESULTS — 61 stocks, ₹27.5L invested
+════════════════════════════════════════════════════════════════════════════════
+                            Your Strategy (Timed HODL)     SIP on Your Stocks       Timed Entry+Exit        SIP on NIFTY 50
+  ───────────────────────────────────────────────────────────────────────────
+  Final Value                              ₹256.0L                ₹317.2L                  ₹9.8L                 ₹34.1L
+  Wealth Multiple                             9.3x                  11.5x                   0.4x                   1.2x
+  XIRR                                       20.3%                  21.9%                 -18.2%                  10.9%
+  Sharpe                                      0.98                   0.92                   0.62                   1.13
+  Sortino                                     1.88                   1.58                   1.17                   2.47
+  Max Drawdown                              -77.0%                 -78.8%                 -80.9%                 -38.1%
+  Max DD Duration                        1574 days              1312 days              2056 days               184 days
+  Volatility                                 41.1%                  47.0%                  45.3%                  34.7%
+
+  Buy signals fired on 178 days across 48/61 stocks
+  Cash drag (Your Strategy): 6.8%
+```
+
+### Key Findings
+
+| Metric | Your Strategy | SIP (same stocks) | NIFTY 50 SIP |
+|---|---|---|---|
+| Final Value | ₹256L | ₹317L | ₹34L |
+| XIRR | 20.3% | 21.9% | 10.9% |
+| Sharpe | **0.98** | 0.92 | 1.13 |
+| Sortino | **1.88** | 1.58 | 2.47 |
+| Max Drawdown | **-77%** | -79% | -38% |
+| Volatility | **41%** | 47% | 35% |
+
+- **Both strategies crush NIFTY 50 by ~10x** — stock picking matters more than timing
+- **SIP wins on absolute returns** (+19% more), **Timed HODL wins on risk-adjusted metrics** (higher Sharpe, Sortino, lower volatility)
+- **Cash drag is only 6.8%** — 60+ stocks keep money deployed
+- **Entry+Exit is terrible** — selling on MACD Sell destroys compounding
+
+### Charts
+
+| Chart | What it shows |
+|---|---|
+| `1_equity_curves.png` | All strategies + NIFTY 50 on one chart |
+| `2_drawdowns.png` | How deep each strategy fell from peak |
+| `3_cash_utilization.png` | % of money actually invested vs cash |
+| `4_regime_returns.png` | Returns during bull, bear, sideways, recovery |
+| `5_rolling_alpha.png` | When your strategy beats/loses to SIP |
+| `6_buy_distribution.png` | Which stocks got bought most often |
+| `7_buy_timeline.png` | When buys happened over time |
+| `8_summary_table.png` | Full metrics table with best values highlighted |
+
+![Equity Curves](backtest_output/1_equity_curves.png)
+![Regime Returns](backtest_output/4_regime_returns.png)
+![Summary Table](backtest_output/8_summary_table.png)
+
 ## Architecture
 
 ```
