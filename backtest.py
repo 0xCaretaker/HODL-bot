@@ -41,9 +41,9 @@ LABEL_EXIT  = "Timed Entry+Exit"
 LABEL_NIFTY = "SIP on NIFTY 50"
 
 CONFIG = {
-    "start": "2000-01-01",
+    "start": "2010-01-01",
     "end": "2026-04-20",
-    "initial_salary": 10_000,
+    "initial_salary": 22_000,
     "invest_pct": 0.25,
     "salary_growth": 0.10,
     "bb_length": 200,
@@ -264,13 +264,13 @@ def simulate_timed_exit(stock_dfs, symbols, monthly_inv, bb_sig, imp_sig, imp_st
         records.append({"date": dt, "portfolio": _portfolio_value(holdings, last_price, symbols, cash), "cash": cash})
     return pd.DataFrame(records).set_index("date"), cashflows, trade_log
 
-def simulate_nifty_sip(cfg, slippage_bps=5):
+def simulate_nifty_sip(cfg, monthly_inv, slippage_bps=5):
+    """SIP into NIFTY 50 using the same monthly investment schedule as the portfolio."""
     print("  Downloading NIFTY 50...")
     data = yf.download("^NSEI", start=cfg["start"], end=cfg["end"], progress=False)
     if data.empty:
         return None, None
     data = flatten_cols(data).dropna()
-    monthly_inv = build_monthly_investments(data.index, cfg)
     units = cash = 0.0
     done_months = set()
     records, cashflows = [], []
@@ -548,8 +548,8 @@ def chart_8_summary_table(metrics_list, total_invested, n_stocks, n_signals, n_s
         f"Period: {a['start_date']} → {a['end_date']}  ({a['years']:.0f} years)\n"
         f"Salary: ₹{a['start_salary']:,}/mo → ₹{a['end_salary']:,.0f}/mo  ({a['hike_pct']:.0f}% annual hike)\n"
         f"Monthly SIP: ₹{a['start_monthly_sip']:,.0f} → ₹{a['end_monthly_sip']:,.0f}  ({a['invest_pct']:.0f}% of salary)\n"
-        f"Total Invested: ₹{total_invested/100000:.1f}L  |  Inflation: {a['inflation_rate']:.0f}%/yr  |  "
-        f"₹1 in {a['start_date'].year} ≈ ₹{a['inflation_factor']:.1f} today"
+        f"Total Invested: ₹{total_invested/100000:.1f}L  (₹{total_invested/a['inflation_factor']/100000:.1f}L in {a['start_date'].year} rupees)  |  "
+        f"Inflation: {a['inflation_rate']:.0f}%/yr  |  ₹1 in {a['start_date'].year} ≈ ₹{a['inflation_factor']:.1f} today"
     )
     ax_top.text(0.5, 0.5, assumption_text, transform=ax_top.transAxes, fontsize=11,
                 va="center", ha="center", family="monospace",
@@ -647,9 +647,8 @@ def print_summary(metrics_list, total_invested, n_stocks, n_signals, n_bought, c
     print(f"  Period:             {a['start_date']} → {a['end_date']} ({a['years']:.1f} years)")
     print(f"  Starting salary:    ₹{a['start_salary']:,}/month → ₹{a['end_salary']:,.0f}/month ({a['hike_pct']:.0f}% annual hike)")
     print(f"  Monthly SIP:        ₹{a['start_monthly_sip']:,.0f} → ₹{a['end_monthly_sip']:,.0f} ({a['invest_pct']:.0f}% of salary)")
-    print(f"  Total invested:     ₹{total_invested/100000:.1f}L over {a['years']:.0f} years")
-    print(f"  Inflation (6%/yr):  ₹{total_invested/100000:.1f}L today = ₹{total_invested/a['inflation_factor']/100000:.1f}L in {int(a['start_date'].year)} rupees")
-    print(f"                      ₹1 in {int(a['start_date'].year)} = ₹{a['inflation_factor']:.1f} today")
+    print(f"  Total invested:     ₹{total_invested/100000:.1f}L (inflation-adjusted: ₹{total_invested/a['inflation_factor']/100000:.1f}L in {int(a['start_date'].year)} rupees)")
+    print(f"  Inflation (6%/yr):  ₹1 in {int(a['start_date'].year)} = ₹{a['inflation_factor']:.1f} today")
 
     print(f"\n{'═'*100}")
     print(f"  RESULTS — {n_stocks} stocks, ₹{total_invested/100000:.1f}L invested")
@@ -717,7 +716,7 @@ def main():
     sip_sim, sip_cf = simulate_sip(stock_dfs, sig_syms, monthly_inv, cfg["slippage_bps"])
     timed_sim, timed_cf, buy_log = simulate_timed_hodl(stock_dfs, sig_syms, monthly_inv, bb_sig, imp_sig, cfg["slippage_bps"])
     exit_sim, exit_cf, trade_log = simulate_timed_exit(stock_dfs, sig_syms, monthly_inv, bb_sig, imp_sig, imp_state, cfg["slippage_bps"])
-    nifty_sim, nifty_cf = simulate_nifty_sip(cfg)
+    nifty_sim, nifty_cf = simulate_nifty_sip(cfg, monthly_inv)
 
     m_timed = compute_metrics(timed_sim["portfolio"], LABEL_TIMED, timed_cf)
     m_sip = compute_metrics(sip_sim["portfolio"], LABEL_SIP, sip_cf)

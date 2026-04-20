@@ -4,15 +4,15 @@ Long-only signal bot for NSE stocks: BB + Impulse MACD timing strategy with Tele
 # Current Status
 - **Bot**: Production-ready, runs via GitHub Actions cron (`hodl.yml`)
 - **Backtest**: Focused portfolio-level simulation. stocks.txt stocks share a single monthly budget. Compares 3 strategies + NIFTY 50 benchmark. Generates 8 clean PNG charts + console summary.
-- **Latest results** (2026-04-20, 61 stocks, ₹27.5L invested over 24 years):
-  - Your Strategy (Timed HODL): ₹256L, XIRR 20.3%, Sharpe 0.98, MaxDD -77%
-  - SIP on Your Stocks: ₹317L, XIRR 21.9%, Sharpe 0.92, MaxDD -79%
-  - SIP on NIFTY 50: ₹34L, XIRR 10.9%, Sharpe 1.13, MaxDD -38%
-  - Timed Entry+Exit: ₹9.8L — destroys returns, don't use
-  - Cash drag only 6.8% (48/61 stocks got signals across 178 buy days)
-  - Timed HODL wins on Sharpe (0.98 vs 0.92), Sortino (1.88 vs 1.58), volatility (41% vs 47%)
-  - SIP wins on absolute returns (+19% more final value)
-  - Both crush NIFTY 50 by ~10x
+- **Latest results** (2026-04-20, 61 stocks, ₹24.7L invested over 16.3 years):
+  - Your Strategy (Timed HODL): ₹194.2L, XIRR 26.9%, Sharpe 1.24, MaxDD -54.1%
+  - SIP on Your Stocks: ₹197.3L, XIRR 27.0%, Sharpe 1.28, MaxDD -63.6%
+  - SIP on NIFTY 50: ₹52.3L, XIRR 10.9%, Sharpe 1.13, MaxDD -37.3%
+  - Timed Entry+Exit: ₹9.9L — destroys returns, don't use
+  - Cash drag only 6.2% (46/61 stocks got signals across 136 buy days)
+  - Timed HODL wins on MaxDD (-54% vs -64%) and volatility risk
+  - SIP nearly matches on absolute returns (neck and neck)
+  - Both crush NIFTY 50 by ~4x
 
 # Architecture
 - `bot.py` — single entry point. Downloads all tickers once via `yf.download`, passes shared DataFrame to signal modules. Sends MarkdownV2 Telegram messages.
@@ -36,7 +36,7 @@ Long-only signal bot for NSE stocks: BB + Impulse MACD timing strategy with Tele
 - yfinance v1.x: columns are always MultiIndex `(Price, Ticker)`, no `auto_adjust` param
 - Risk-free rate = 6% (India) for Sharpe/Sortino
 - Slippage = 5 bps
-- Backtest salary: ₹10K/month starting 2000, 25% invested, 10% annual growth
+- Backtest salary: ₹22K/month starting 2010, 25% invested, 10% annual hike (reaches ~₹1L/month by 2026)
 
 # Key Files
 - `bot.py` — production entry point

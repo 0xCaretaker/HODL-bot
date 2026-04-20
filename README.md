@@ -141,57 +141,56 @@ python3 backtest.py
 
 Generates 8 charts in `backtest_output/` + console summary.
 
-### Latest Results (61 stocks, 2002–2026)
+### Latest Results (61 stocks, 2010–2026)
 
 ```
 ════════════════════════════════════════════════════════════════════════════════════════════════════
   INVESTMENT ASSUMPTIONS
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-  Period:             2002-01-24 → 2026-04-17 (24.2 years)
-  Starting salary:    ₹10,000/month → ₹98,497/month (10% annual hike)
-  Monthly SIP:        ₹2,500 → ₹24,624 (25% of salary)
-  Total invested:     ₹27.5L over 24 years
-  Inflation (6%/yr):  ₹27.5L today = ₹6.7L in 2002 rupees
-                      ₹1 in 2002 = ₹4.1 today
+  Period:             2010-01-04 → 2026-04-17 (16.3 years)
+  Starting salary:    ₹22,000/month → ₹101,089/month (10% annual hike)
+  Monthly SIP:        ₹5,500 → ₹25,272 (25% of salary)
+  Total invested:     ₹24.7L (inflation-adjusted: ₹9.6L in 2010 rupees)
+  Inflation (6%/yr):  ₹1 in 2010 = ₹2.6 today
 
 ════════════════════════════════════════════════════════════════════════════════════════════════════
-  RESULTS — 61 stocks, ₹27.5L invested
+  RESULTS — 61 stocks, ₹24.7L invested
 ════════════════════════════════════════════════════════════════════════════════════════════════════
                             Your Strategy (Timed HODL)     SIP on Your Stocks       Timed Entry+Exit        SIP on NIFTY 50
   ───────────────────────────────────────────────────────────────────────────────────────────────
-  Final Value                              ₹256.0L                ₹317.2L                  ₹9.8L                 ₹34.1L
-  Inflation-Adj Value                       ₹62.4L                 ₹77.3L                  ₹2.4L                  ₹8.3L
-  Wealth Multiple                             9.3x                  11.5x                   0.4x                   1.2x
-  Real Multiple (infl-adj)                    2.3x                   2.8x                   0.1x                   0.3x
-  XIRR                                       20.3%                  21.9%                 -18.2%                  10.9%
-  Real XIRR (minus 6% infl)                  14.3%                  15.9%                 -24.2%                   4.9%
-  Sharpe                                      0.98                   0.92                   0.62                   1.13
-  Sortino                                     1.88                   1.58                   1.17                   2.47
-  Max Drawdown                              -77.0%                 -78.8%                 -80.9%                 -38.1%
-  Max DD Duration                        1574 days              1312 days              2056 days               184 days
-  Volatility                                 41.1%                  47.0%                  45.3%                  34.7%
+  Final Value                              ₹194.2L                ₹197.3L                  ₹9.9L                 ₹52.3L
+  Inflation-Adj Value                       ₹75.2L                 ₹76.4L                  ₹3.8L                 ₹20.2L
+  Wealth Multiple                             7.9x                   8.0x                   0.4x                   2.1x
+  Real Multiple (infl-adj)                    3.0x                   3.1x                   0.2x                   0.8x
+  XIRR                                       26.9%                  27.0%                 -18.5%                  10.9%
+  Real XIRR (minus 6% infl)                  20.9%                  21.0%                 -24.5%                   4.9%
+  Sharpe                                      1.24                   1.28                   0.76                   1.13
+  Sortino                                     2.83                   3.00                   1.58                   3.40
+  Max Drawdown                              -54.1%                 -63.6%                 -55.6%                 -37.3%
+  Max DD Duration                         733 days               820 days               589 days               183 days
+  Volatility                                 42.8%                  40.7%                  49.2%                  37.7%
 
-  Buy signals fired on 178 days across 48/61 stocks
-  Cash drag (Your Strategy): 6.8%
+  Buy signals fired on 136 days across 46/61 stocks
+  Cash drag (Your Strategy): 6.2%
 ```
 
 ### Key Findings
 
 | Metric | Your Strategy | SIP (same stocks) | NIFTY 50 SIP |
 |---|---|---|---|
-| Final Value | ₹256L | ₹317L | ₹34L |
-| Inflation-Adjusted | ₹62L | ₹77L | ₹8L |
-| XIRR | 20.3% | 21.9% | 10.9% |
-| Real XIRR (−6% inflation) | **14.3%** | 15.9% | 4.9% |
-| Sharpe | **0.98** | 0.92 | 1.13 |
-| Sortino | **1.88** | 1.58 | 2.47 |
-| Max Drawdown | **-77%** | -79% | -38% |
-| Volatility | **41%** | 47% | 35% |
+| Final Value | ₹194L | ₹197L | ₹52L |
+| Inflation-Adjusted | ₹75L | ₹76L | ₹20L |
+| XIRR | 26.9% | 27.0% | 10.9% |
+| Real XIRR (−6% inflation) | **20.9%** | 21.0% | 4.9% |
+| Sharpe | 1.24 | **1.28** | 1.13 |
+| Sortino | 2.83 | 3.00 | 3.40 |
+| Max Drawdown | **-54%** | -64% | -37% |
+| Volatility | 42.8% | **40.7%** | 37.7% |
 
-- **Both strategies crush NIFTY 50 by ~10x** — stock picking matters more than timing
-- **SIP wins on absolute returns** (+19% more), **Timed HODL wins on risk-adjusted metrics** (higher Sharpe, Sortino, lower volatility)
-- **Real returns beat inflation easily** — 14.3% real XIRR for Timed HODL vs 4.9% for NIFTY 50
-- **Cash drag is only 6.8%** — 60+ stocks keep money deployed
+- **Both strategies crush NIFTY 50 by ~4x** — stock picking matters more than timing
+- **Timed HODL and SIP are neck-and-neck on returns** — but Timed HODL has significantly lower max drawdown (-54% vs -64%)
+- **Real returns beat inflation easily** — 20.9% real XIRR for Timed HODL vs 4.9% for NIFTY 50
+- **Cash drag is only 6.2%** — 60+ stocks keep money deployed
 - **Entry+Exit is terrible** — selling on MACD Sell destroys compounding
 
 ### Charts
