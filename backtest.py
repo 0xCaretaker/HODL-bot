@@ -214,6 +214,7 @@ def simulate_timed_hodl(stock_dfs, symbols, monthly_inv, bb_sig, bb_mid, imp_sig
     last_price = {s: 0.0 for s in symbols}
     cash = 0.0
     idle_days = 0
+    idle_streaks = []
     done_months = set()
     records, cashflows, buy_log = [], [], []
     for dt in dates:
@@ -233,7 +234,9 @@ def simulate_timed_hodl(stock_dfs, symbols, monthly_inv, bb_sig, bb_mid, imp_sig
                 for s in buying:
                     holdings[s] += per / (last_price[s] * (1 + slippage_bps / 10000))
                     buy_log.append({"date": dt, "stock": s, "price": last_price[s], "amount": per, "type": "signal"})
-                cash = 0.0; bought = True; idle_days = 0
+                cash = 0.0; bought = True
+                if idle_days > 0: idle_streaks.append(idle_days)
+                idle_days = 0
         if cash > 0:
             idle_days += 1
             if idle_days >= idle_threshold:
@@ -255,11 +258,14 @@ def simulate_timed_hodl(stock_dfs, symbols, monthly_inv, bb_sig, bb_mid, imp_sig
                             holdings[s] += alloc / (last_price[s] * (1 + slippage_bps / 10000))
                             buy_log.append({"date": dt, "stock": s, "price": last_price[s], "amount": alloc, "type": "fallback"})
                             remaining -= alloc
-                    cash = remaining; idle_days = 0
+                    cash = remaining
+                    if idle_days > 0: idle_streaks.append(idle_days)
+                    idle_days = 0
         elif bought:
             idle_days = 0
         records.append({"date": dt, "portfolio": _portfolio_value(holdings, last_price, symbols, cash), "cash": cash})
-    return pd.DataFrame(records).set_index("date"), cashflows, buy_log
+    if idle_days > 0: idle_streaks.append(idle_days)
+    return pd.DataFrame(records).set_index("date"), cashflows, buy_log, idle_streaks
 
 def simulate_timed_exit(stock_dfs, symbols, monthly_inv, bb_sig, imp_sig, imp_state, slippage_bps=5):
     dates = get_all_dates(stock_dfs, symbols)
@@ -733,6 +739,8 @@ def print_summary(metrics_list, total_invested, n_stocks, n_signals, n_bought, c
     print(f"  Cash idle — longest: {max_idle} trading days (~{max_idle/21:.1f} months), average: {avg_idle:.0f} trading days (~{avg_idle/21:.1f} months)")
     if n_fallback > 0:
         print(f"  Fallback buys: {n_fallback} (averaging into held stocks below BB midline after {idle_threshold} idle days)")
+    if max_idle > idle_threshold:
+        print(f"  ⚠ Longest idle ({max_idle}d) exceeded threshold — no held stocks were below BB midline to deploy into")
 
 
 # ─── Trade log ─────────────────────────────────────────────────────────────
@@ -817,7 +825,7 @@ def main():
 
     print(f"\n  Simulating strategies...")
     sip_sim, sip_cf = simulate_sip(stock_dfs, sig_syms, monthly_inv, cfg["slippage_bps"])
-    timed_sim, timed_cf, buy_log = simulate_timed_hodl(stock_dfs, sig_syms, monthly_inv, bb_sig, bb_mid, imp_sig, cfg["slippage_bps"])
+    timed_sim, timed_cf, buy_log, idle_streaks = simulate_timed_hodl(stock_dfs, sig_syms, monthly_inv, bb_sig, bb_mid, imp_sig, cfg["slippage_bps"])
     exit_sim, exit_cf, trade_log = simulate_timed_exit(stock_dfs, sig_syms, monthly_inv, bb_sig, imp_sig, imp_state, cfg["slippage_bps"])
     nifty_sim, nifty_cf = simulate_nifty_sip(cfg, monthly_inv)
 
@@ -834,16 +842,8 @@ def main():
     cash_total = timed_sim["portfolio"].replace(0, np.nan)
     cash_pct = (timed_sim["cash"] / cash_total * 100).fillna(100).mean()
 
-    cash_idle = timed_sim["cash"] > 0
-    streaks, cur = [], 0
-    for v in cash_idle:
-        if v: cur += 1
-        else:
-            if cur > 0: streaks.append(cur)
-            cur = 0
-    if cur > 0: streaks.append(cur)
-    max_idle = max(streaks) if streaks else 0
-    avg_idle = np.mean(streaks) if streaks else 0
+    max_idle = max(idle_streaks) if idle_streaks else 0
+    avg_idle = np.mean(idle_streaks) if idle_streaks else 0
 
     metrics_list = [m_timed, m_sip, m_exit]
     if m_nifty: metrics_list.append(m_nifty)
