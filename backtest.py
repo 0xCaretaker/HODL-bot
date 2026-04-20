@@ -323,6 +323,15 @@ def compute_metrics(series, name, cashflows=None):
             "calmar": calmar, "volatility": dr.std()*np.sqrt(252)*100, "best_day": dr.max()*100, "worst_day": dr.min()*100}
 
 
+def _equal_weight_returns(stock_dfs, symbols):
+    closes = {}
+    for s in symbols:
+        if s in stock_dfs:
+            closes[s] = stock_dfs[s]["Close"]
+    df = pd.DataFrame(closes)
+    return df.pct_change().mean(axis=1).dropna()
+
+
 # ─── Charts ─────────────────────────────────────────────────────────────────
 
 def _style_ax(ax, ylabel="", title=""):
@@ -415,12 +424,11 @@ def chart_3_cash(timed_sim, exit_sim, filename):
     plt.close(fig)
 
 
-def chart_4_regimes(portfolios, nifty_series, filename):
-    all_series = dict(portfolios)
-    if nifty_series is not None:
-        all_series[LABEL_NIFTY] = nifty_series
-    strats = [LABEL_TIMED, LABEL_SIP, LABEL_NIFTY] if nifty_series is not None else [LABEL_TIMED, LABEL_SIP]
-    colors = {LABEL_TIMED: C_TIMED, LABEL_SIP: C_SIP, LABEL_NIFTY: C_NIFTY}
+def chart_4_regimes(stock_dfs, symbols, nifty_series, filename):
+    strats = ["Your Stocks (Equal-Wt)", LABEL_NIFTY] if nifty_series is not None else ["Your Stocks (Equal-Wt)"]
+    colors = {"Your Stocks (Equal-Wt)": C_TIMED, LABEL_NIFTY: C_NIFTY}
+
+    ew_returns = _equal_weight_returns(stock_dfs, symbols)
 
     regime_names = list(REGIMES.keys())
     data_rows = []
@@ -428,11 +436,17 @@ def chart_4_regimes(portfolios, nifty_series, filename):
         start, end, rtype = REGIMES[rname]
         row = {"regime": rname, "type": rtype}
         for sname in strats:
-            pf = all_series.get(sname)
-            if pf is None:
-                row[sname] = np.nan; continue
-            sub = pf[(pf.index >= start) & (pf.index <= end)]
-            row[sname] = (sub.iloc[-1] / sub.iloc[0] - 1) * 100 if len(sub) >= 2 else np.nan
+            if sname == LABEL_NIFTY:
+                pf = nifty_series
+                if pf is None: row[sname] = np.nan; continue
+                sub = pf[(pf.index >= start) & (pf.index <= end)]
+                if len(sub) >= 2:
+                    row[sname] = (sub.iloc[-1] / sub.iloc[0] - 1) * 100
+                else:
+                    row[sname] = np.nan
+            else:
+                sub = ew_returns[(ew_returns.index >= start) & (ew_returns.index <= end)]
+                row[sname] = ((1 + sub).prod() - 1) * 100 if len(sub) >= 2 else np.nan
         data_rows.append(row)
 
     x = np.arange(len(regime_names))
@@ -676,6 +690,49 @@ def print_summary(metrics_list, total_invested, n_stocks, n_signals, n_bought, c
     print(f"  Cash drag (Your Strategy): {cash_pct:.1f}%")
 
 
+# ─── Trade log ─────────────────────────────────────────────────────────────
+
+def write_trade_log(buy_log, exit_trade_log, monthly_inv, timed_sim, filename):
+    rows = []
+    for b in buy_log:
+        rows.append({
+            "date": b["date"].strftime("%Y-%m-%d"),
+            "year": b["date"].year,
+            "month": b["date"].month,
+            "strategy": "Timed HODL",
+            "action": "BUY",
+            "stock": b["stock"].replace(".NS", ""),
+            "price": round(b["price"], 2),
+            "amount": round(b["amount"], 2),
+        })
+    for t in exit_trade_log:
+        rows.append({
+            "date": t["date"].strftime("%Y-%m-%d"),
+            "year": t["date"].year,
+            "month": t["date"].month,
+            "strategy": "Timed Entry+Exit",
+            "action": t["type"],
+            "stock": t["stock"].replace(".NS", ""),
+            "price": round(t["price"], 2),
+            "amount": round(t.get("amount", t.get("proceeds", 0)), 2),
+        })
+    df = pd.DataFrame(rows).sort_values(["date", "strategy", "stock"])
+    df.to_csv(filename, index=False)
+
+    summary = df[df["strategy"] == "Timed HODL"].groupby(["year", "month"]).agg(
+        trades=("stock", "count"),
+        stocks=("stock", lambda x: ", ".join(sorted(set(x)))),
+        total_deployed=("amount", "sum"),
+    ).reset_index()
+    summary["total_deployed"] = summary["total_deployed"].round(0).astype(int)
+    summary_file = filename.replace("trades.csv", "trades_monthly_summary.csv")
+    summary.to_csv(summary_file, index=False)
+
+    print(f"\n  Trade logs saved:")
+    print(f"    • {os.path.basename(filename)} ({len(df)} trades)")
+    print(f"    • {os.path.basename(summary_file)} (monthly summary)")
+
+
 # ─── Main ───────────────────────────────────────────────────────────────────
 
 def main():
@@ -741,11 +798,15 @@ def main():
     chart_1_equity(portfolios, nifty_series, total_invested, "1_equity_curves.png")
     chart_2_drawdowns(portfolios, nifty_series, "2_drawdowns.png")
     chart_3_cash(timed_sim, exit_sim, "3_cash_utilization.png")
-    chart_4_regimes(portfolios, nifty_series, "4_regime_returns.png")
+    nifty_raw = yf.download("^NSEI", start=cfg["start"], end=cfg["end"], progress=False)
+    nifty_price = flatten_cols(nifty_raw)["Close"].dropna() if not nifty_raw.empty else None
+    chart_4_regimes(stock_dfs, sig_syms, nifty_price, "4_regime_returns.png")
     chart_5_rolling_alpha(portfolios, "5_rolling_alpha.png")
     chart_6_buy_distribution(buy_log, len(sig_syms), "6_buy_distribution.png")
     chart_7_buy_timeline(buy_log, "7_buy_timeline.png")
     chart_8_summary_table(metrics_list, total_invested, len(sig_syms), len(buy_dates), len(stocks_bought), assumptions, "8_summary_table.png")
+
+    write_trade_log(buy_log, trade_log, monthly_inv, timed_sim, os.path.join(OUTPUT_DIR, "trades.csv"))
 
     charts = sorted(f for f in os.listdir(OUTPUT_DIR) if f.endswith(".png"))
     print(f"\n  {len(charts)} charts saved to {OUTPUT_DIR}/:")
