@@ -537,16 +537,36 @@ def chart_7_buy_timeline(buy_log, filename):
     plt.close(fig)
 
 
-def chart_8_summary_table(metrics_list, total_invested, n_stocks, n_signals, n_stocks_bought, filename):
-    fig, ax = plt.subplots(figsize=(14, 8))
+def chart_8_summary_table(metrics_list, total_invested, n_stocks, n_signals, n_stocks_bought, assumptions, filename):
+    a = assumptions
+    fig = plt.figure(figsize=(14, 11))
+    gs = GridSpec(2, 1, height_ratios=[1, 3.5], hspace=0.05)
+
+    ax_top = fig.add_subplot(gs[0])
+    ax_top.axis("off")
+    assumption_text = (
+        f"Period: {a['start_date']} → {a['end_date']}  ({a['years']:.0f} years)\n"
+        f"Salary: ₹{a['start_salary']:,}/mo → ₹{a['end_salary']:,.0f}/mo  ({a['hike_pct']:.0f}% annual hike)\n"
+        f"Monthly SIP: ₹{a['start_monthly_sip']:,.0f} → ₹{a['end_monthly_sip']:,.0f}  ({a['invest_pct']:.0f}% of salary)\n"
+        f"Total Invested: ₹{total_invested/100000:.1f}L  |  Inflation: {a['inflation_rate']:.0f}%/yr  |  "
+        f"₹1 in {a['start_date'].year} ≈ ₹{a['inflation_factor']:.1f} today"
+    )
+    ax_top.text(0.5, 0.5, assumption_text, transform=ax_top.transAxes, fontsize=11,
+                va="center", ha="center", family="monospace",
+                bbox=dict(boxstyle="round,pad=0.8", facecolor="#f0f4f8", edgecolor="#ccc", linewidth=1))
+
+    ax = fig.add_subplot(gs[1])
     ax.axis("off")
 
+    infl = a["inflation_factor"]
     rows = [
         ("Final Value", [f'₹{m["final_value"]/100000:.1f}L' for m in metrics_list]),
+        ("Inflation-Adjusted Value", [f'₹{m["final_value"]/infl/100000:.1f}L' for m in metrics_list]),
         ("Total Invested", [f'₹{total_invested/100000:.1f}L'] * len(metrics_list)),
         ("Wealth Multiple", [f'{m["final_value"]/total_invested:.1f}x' for m in metrics_list]),
+        ("Real Multiple (infl-adj)", [f'{m["final_value"]/infl/total_invested:.1f}x' for m in metrics_list]),
         ("XIRR (True Return)", [f'{m["xirr"]:.1f}%' if not np.isnan(m["xirr"]) else "—" for m in metrics_list]),
-        ("CAGR", [f'{m["cagr"]:.1f}%' for m in metrics_list]),
+        ("Real XIRR (−6% inflation)", [f'{m["xirr"]-a["inflation_rate"]:.1f}%' if not np.isnan(m["xirr"]) else "—" for m in metrics_list]),
         ("Sharpe Ratio", [f'{m["sharpe"]:.2f}' for m in metrics_list]),
         ("Sortino Ratio", [f'{m["sortino"]:.2f}' for m in metrics_list]),
         ("Max Drawdown", [f'{m["max_drawdown"]:.1f}%' for m in metrics_list]),
@@ -565,7 +585,7 @@ def chart_8_summary_table(metrics_list, total_invested, n_stocks, n_signals, n_s
                      cellLoc="center", rowLoc="right", loc="center")
     table.auto_set_font_size(False)
     table.set_fontsize(11)
-    table.scale(1, 1.6)
+    table.scale(1, 1.5)
 
     for j, color in enumerate(colors_header):
         table[0, j].set_facecolor(color)
@@ -576,8 +596,8 @@ def chart_8_summary_table(metrics_list, total_invested, n_stocks, n_signals, n_s
         for j in range(len(col_labels)):
             table[i+1, j].set_facecolor("#f8f9fa" if i % 2 == 0 else "white")
 
-    best_vals = {"Final Value": max, "XIRR (True Return)": max, "Sharpe Ratio": max, "Sortino Ratio": max,
-                 "Max Drawdown": max, "Volatility (annual)": min}
+    best_vals = {"Final Value": max, "XIRR (True Return)": max, "Real XIRR (−6% inflation)": max,
+                 "Sharpe Ratio": max, "Sortino Ratio": max, "Max Drawdown": max, "Volatility (annual)": min}
     for i, (rname, vals) in enumerate(rows):
         if rname in best_vals:
             fn = best_vals[rname]
@@ -585,35 +605,65 @@ def chart_8_summary_table(metrics_list, total_invested, n_stocks, n_signals, n_s
             for v in vals:
                 try: numeric.append(float(v.replace("₹","").replace("L","").replace("x","").replace("%","").replace("days","").replace(",","").replace("—","nan")))
                 except: numeric.append(np.nan)
-            if any(not np.isnan(n) for n in numeric):
-                if rname == "Max Drawdown":
-                    best_j = numeric.index(fn(n for n in numeric if not np.isnan(n)))
-                elif rname == "Volatility (annual)":
-                    best_j = numeric.index(fn(n for n in numeric if not np.isnan(n)))
-                else:
-                    best_j = numeric.index(fn(n for n in numeric if not np.isnan(n)))
+            valid = [n for n in numeric if not np.isnan(n)]
+            if valid:
+                best_j = numeric.index(fn(valid))
                 table[i+1, best_j].set_text_props(fontweight="bold", color=colors_header[best_j])
 
     ax.set_title(f"Performance Summary — {n_stocks} Stocks, {n_signals} Buy Signals, {n_stocks_bought} Stocks Bought",
-                 fontsize=14, fontweight="bold", pad=20)
-    fig.tight_layout()
+                 fontsize=14, fontweight="bold", pad=10)
     fig.savefig(os.path.join(OUTPUT_DIR, filename), dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
 # ─── Console output ────────────────────────────────────────────────────────
 
-def print_summary(metrics_list, total_invested, n_stocks, n_signals, n_bought, cash_pct):
-    print(f"\n{'═'*80}")
+def compute_investment_assumptions(cfg, dates):
+    start, end = dates[0], dates[-1]
+    years = (end - start).days / 365.25
+    start_monthly = cfg["initial_salary"] * cfg["invest_pct"]
+    end_monthly = cfg["initial_salary"] * (1 + cfg["salary_growth"]) ** int(years) * cfg["invest_pct"]
+    inflation_rate = 0.06
+    inflation_factor = (1 + inflation_rate) ** years
+    return {
+        "years": years,
+        "start_salary": cfg["initial_salary"],
+        "end_salary": cfg["initial_salary"] * (1 + cfg["salary_growth"]) ** int(years),
+        "hike_pct": cfg["salary_growth"] * 100,
+        "invest_pct": cfg["invest_pct"] * 100,
+        "start_monthly_sip": start_monthly,
+        "end_monthly_sip": end_monthly,
+        "inflation_rate": inflation_rate * 100,
+        "inflation_factor": inflation_factor,
+        "start_date": start.date(),
+        "end_date": end.date(),
+    }
+
+def print_summary(metrics_list, total_invested, n_stocks, n_signals, n_bought, cash_pct, assumptions):
+    a = assumptions
+    print(f"\n{'═'*100}")
+    print(f"  INVESTMENT ASSUMPTIONS")
+    print(f"{'─'*100}")
+    print(f"  Period:             {a['start_date']} → {a['end_date']} ({a['years']:.1f} years)")
+    print(f"  Starting salary:    ₹{a['start_salary']:,}/month → ₹{a['end_salary']:,.0f}/month ({a['hike_pct']:.0f}% annual hike)")
+    print(f"  Monthly SIP:        ₹{a['start_monthly_sip']:,.0f} → ₹{a['end_monthly_sip']:,.0f} ({a['invest_pct']:.0f}% of salary)")
+    print(f"  Total invested:     ₹{total_invested/100000:.1f}L over {a['years']:.0f} years")
+    print(f"  Inflation (6%/yr):  ₹{total_invested/100000:.1f}L today = ₹{total_invested/a['inflation_factor']/100000:.1f}L in {int(a['start_date'].year)} rupees")
+    print(f"                      ₹1 in {int(a['start_date'].year)} = ₹{a['inflation_factor']:.1f} today")
+
+    print(f"\n{'═'*100}")
     print(f"  RESULTS — {n_stocks} stocks, ₹{total_invested/100000:.1f}L invested")
-    print(f"{'═'*80}")
+    print(f"{'═'*100}")
     hdr = f"  {'':25s}" + "".join(f" {m['name']:>22s}" for m in metrics_list)
     print(hdr)
-    print(f"  {'─'*75}")
+    print(f"  {'─'*95}")
     rows = [
         ("Final Value", [f"₹{m['final_value']/100000:.1f}L" for m in metrics_list]),
+        ("Inflation-Adj Value", [f"₹{m['final_value']/a['inflation_factor']/100000:.1f}L" for m in metrics_list]),
         ("Wealth Multiple", [f"{m['final_value']/total_invested:.1f}x" for m in metrics_list]),
+        ("Real Multiple (infl-adj)", [f"{m['final_value']/a['inflation_factor']/total_invested:.1f}x" for m in metrics_list]),
         ("XIRR", [f"{m['xirr']:.1f}%" if not np.isnan(m['xirr']) else "—" for m in metrics_list]),
+        ("Real XIRR (minus 6% infl)", [f"{m['xirr']-a['inflation_rate']:.1f}%" if not np.isnan(m['xirr']) else "—" for m in metrics_list]),
         ("Sharpe", [f"{m['sharpe']:.2f}" for m in metrics_list]),
         ("Sortino", [f"{m['sortino']:.2f}" for m in metrics_list]),
         ("Max Drawdown", [f"{m['max_drawdown']:.1f}%" for m in metrics_list]),
@@ -685,7 +735,8 @@ def main():
     metrics_list = [m_timed, m_sip, m_exit]
     if m_nifty: metrics_list.append(m_nifty)
 
-    print_summary(metrics_list, total_invested, len(sig_syms), len(buy_dates), len(stocks_bought), cash_pct)
+    assumptions = compute_investment_assumptions(cfg, dates)
+    print_summary(metrics_list, total_invested, len(sig_syms), len(buy_dates), len(stocks_bought), cash_pct, assumptions)
 
     print(f"\n  Generating charts...")
     chart_1_equity(portfolios, nifty_series, total_invested, "1_equity_curves.png")
@@ -695,7 +746,7 @@ def main():
     chart_5_rolling_alpha(portfolios, "5_rolling_alpha.png")
     chart_6_buy_distribution(buy_log, len(sig_syms), "6_buy_distribution.png")
     chart_7_buy_timeline(buy_log, "7_buy_timeline.png")
-    chart_8_summary_table(metrics_list, total_invested, len(sig_syms), len(buy_dates), len(stocks_bought), "8_summary_table.png")
+    chart_8_summary_table(metrics_list, total_invested, len(sig_syms), len(buy_dates), len(stocks_bought), assumptions, "8_summary_table.png")
 
     charts = sorted(f for f in os.listdir(OUTPUT_DIR) if f.endswith(".png"))
     print(f"\n  {len(charts)} charts saved to {OUTPUT_DIR}/:")

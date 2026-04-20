@@ -141,17 +141,30 @@ python3 backtest.py
 
 Generates 8 charts in `backtest_output/` + console summary.
 
-### Latest Results (61 stocks, 2002–2026, ₹27.5L invested)
+### Latest Results (61 stocks, 2002–2026)
 
 ```
-════════════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════════════════════════
+  INVESTMENT ASSUMPTIONS
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  Period:             2002-01-24 → 2026-04-17 (24.2 years)
+  Starting salary:    ₹10,000/month → ₹98,497/month (10% annual hike)
+  Monthly SIP:        ₹2,500 → ₹24,624 (25% of salary)
+  Total invested:     ₹27.5L over 24 years
+  Inflation (6%/yr):  ₹27.5L today = ₹6.7L in 2002 rupees
+                      ₹1 in 2002 = ₹4.1 today
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
   RESULTS — 61 stocks, ₹27.5L invested
-════════════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════════════════════════
                             Your Strategy (Timed HODL)     SIP on Your Stocks       Timed Entry+Exit        SIP on NIFTY 50
-  ───────────────────────────────────────────────────────────────────────────
+  ───────────────────────────────────────────────────────────────────────────────────────────────
   Final Value                              ₹256.0L                ₹317.2L                  ₹9.8L                 ₹34.1L
+  Inflation-Adj Value                       ₹62.4L                 ₹77.3L                  ₹2.4L                  ₹8.3L
   Wealth Multiple                             9.3x                  11.5x                   0.4x                   1.2x
+  Real Multiple (infl-adj)                    2.3x                   2.8x                   0.1x                   0.3x
   XIRR                                       20.3%                  21.9%                 -18.2%                  10.9%
+  Real XIRR (minus 6% infl)                  14.3%                  15.9%                 -24.2%                   4.9%
   Sharpe                                      0.98                   0.92                   0.62                   1.13
   Sortino                                     1.88                   1.58                   1.17                   2.47
   Max Drawdown                              -77.0%                 -78.8%                 -80.9%                 -38.1%
@@ -167,7 +180,9 @@ Generates 8 charts in `backtest_output/` + console summary.
 | Metric | Your Strategy | SIP (same stocks) | NIFTY 50 SIP |
 |---|---|---|---|
 | Final Value | ₹256L | ₹317L | ₹34L |
+| Inflation-Adjusted | ₹62L | ₹77L | ₹8L |
 | XIRR | 20.3% | 21.9% | 10.9% |
+| Real XIRR (−6% inflation) | **14.3%** | 15.9% | 4.9% |
 | Sharpe | **0.98** | 0.92 | 1.13 |
 | Sortino | **1.88** | 1.58 | 2.47 |
 | Max Drawdown | **-77%** | -79% | -38% |
@@ -175,6 +190,7 @@ Generates 8 charts in `backtest_output/` + console summary.
 
 - **Both strategies crush NIFTY 50 by ~10x** — stock picking matters more than timing
 - **SIP wins on absolute returns** (+19% more), **Timed HODL wins on risk-adjusted metrics** (higher Sharpe, Sortino, lower volatility)
+- **Real returns beat inflation easily** — 14.3% real XIRR for Timed HODL vs 4.9% for NIFTY 50
 - **Cash drag is only 6.8%** — 60+ stocks keep money deployed
 - **Entry+Exit is terrible** — selling on MACD Sell destroys compounding
 
