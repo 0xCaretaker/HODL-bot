@@ -10,6 +10,7 @@ Output: console summary + PNG charts in backtest_output/
 """
 
 import os
+import json
 import warnings
 import numpy as np
 import pandas as pd
@@ -852,6 +853,140 @@ def write_trade_log(buy_log, exit_trade_log, monthly_inv, timed_sim, filename):
     print(f"    • {os.path.basename(summary_file)} (monthly summary)")
 
 
+# ─── Dashboard data export ─────────────────────────────────────────────────
+
+def _downsample(series, max_points=800):
+    if len(series) <= max_points:
+        return series
+    idx = np.linspace(0, len(series) - 1, max_points, dtype=int)
+    return series.iloc[idx]
+
+def save_dashboard_data(portfolios, nifty_series, timed_sim, exit_sim,
+                        nav_series, nifty_price, metrics_list, buy_log,
+                        total_invested, assumptions, idle_streaks,
+                        n_stocks, n_signals, n_stocks_bought, cash_pct, filename):
+    a = assumptions
+
+    def ts(s):
+        s = _downsample(s)
+        return {"dates": [d.strftime("%Y-%m-%d") for d in s.index],
+                "values": [round(float(v), 2) for v in s.values]}
+
+    # Equity curves
+    equity = {}
+    for name, s in portfolios.items():
+        equity[name] = ts(s)
+    if nifty_series is not None:
+        equity[LABEL_NIFTY] = ts(nifty_series)
+
+    # Drawdowns
+    drawdowns = {}
+    for name, s in portfolios.items():
+        dd = (s - s.cummax()) / s.cummax() * 100
+        drawdowns[name] = ts(dd)
+    if nifty_series is not None:
+        dd = (nifty_series - nifty_series.cummax()) / nifty_series.cummax() * 100
+        drawdowns[LABEL_NIFTY] = ts(dd)
+
+    # Cash utilization
+    cash_data = {}
+    for sim, name in [(timed_sim, LABEL_TIMED), (exit_sim, LABEL_EXIT)]:
+        total = sim["portfolio"].replace(0, np.nan)
+        inv_pct = ((1 - sim["cash"] / total) * 100).fillna(0)
+        cash_data[name] = ts(inv_pct)
+
+    # Regime returns
+    regime_data = []
+    strats = [LABEL_TIMED, LABEL_PARTIAL, LABEL_SIP]
+    if nifty_price is not None:
+        strats.append(LABEL_NIFTY)
+    for rname, (start, end, rtype) in REGIMES.items():
+        row = {"regime": rname.replace("\n", " "), "type": rtype}
+        for sname in strats:
+            pf = nifty_price if sname == LABEL_NIFTY else nav_series.get(sname)
+            if pf is None:
+                row[sname] = None; continue
+            sub = pf[(pf.index >= start) & (pf.index <= end)]
+            if len(sub) >= 2:
+                row[sname] = round((sub.iloc[-1] / sub.iloc[0] - 1) * 100, 1)
+            else:
+                row[sname] = None
+        regime_data.append(row)
+
+    # Rolling alpha
+    sip = portfolios[LABEL_SIP]
+    timed = portfolios[LABEL_TIMED]
+    rolling_alpha = {}
+    for window, label in [(252, "1Y"), (252*3, "3Y")]:
+        sip_r = (sip / sip.shift(window) - 1) * 100
+        timed_r = (timed / timed.shift(window) - 1) * 100
+        alpha = (timed_r - sip_r).dropna()
+        if len(alpha) > 0:
+            pct_win = round(float((alpha > 0).mean() * 100), 1)
+            rolling_alpha[label] = {**ts(alpha), "pct_win": pct_win}
+
+    # Buy distribution
+    buy_counts = {}
+    for b in buy_log:
+        sym = b["stock"].replace(".NS", "")
+        buy_counts[sym] = buy_counts.get(sym, 0) + 1
+    buy_dist = sorted(buy_counts.items(), key=lambda x: x[1], reverse=True)
+
+    # Buy timeline (monthly aggregation)
+    by_month = {}
+    for b in buy_log:
+        key = f"{b['date'].year}-{b['date'].month:02d}"
+        by_month[key] = by_month.get(key, 0) + b["amount"]
+    buy_timeline = [{"month": k, "amount": round(v)} for k, v in sorted(by_month.items())]
+
+    max_idle = max(idle_streaks) if idle_streaks else 0
+    avg_idle = np.mean(idle_streaks) if idle_streaks else 0
+    n_fallback = sum(1 for b in buy_log if b.get("type") == "fallback")
+
+    data = {
+        "equity": equity,
+        "drawdowns": drawdowns,
+        "cash_util": cash_data,
+        "regimes": regime_data,
+        "regime_strategies": strats,
+        "rolling_alpha": rolling_alpha,
+        "buy_distribution": buy_dist[:30],
+        "buy_timeline": buy_timeline,
+        "metrics": metrics_list,
+        "total_invested": round(total_invested),
+        "assumptions": {
+            "start_date": str(a["start_date"]),
+            "end_date": str(a["end_date"]),
+            "years": round(a["years"], 1),
+            "start_salary": a["start_salary"],
+            "end_salary": round(a["end_salary"]),
+            "hike_pct": a["hike_pct"],
+            "invest_pct": a["invest_pct"],
+            "start_monthly_sip": round(a["start_monthly_sip"]),
+            "end_monthly_sip": round(a["end_monthly_sip"]),
+            "inflation_rate": a["inflation_rate"],
+            "inflation_factor": round(a["inflation_factor"], 2),
+        },
+        "summary": {
+            "n_stocks": n_stocks,
+            "n_signals": n_signals,
+            "n_stocks_bought": n_stocks_bought,
+            "cash_pct": round(cash_pct, 1),
+            "max_idle": max_idle,
+            "avg_idle": round(avg_idle),
+            "n_fallback": n_fallback,
+        },
+        "strategy_colors": {
+            LABEL_TIMED: C_TIMED, LABEL_PARTIAL: C_PARTIAL,
+            LABEL_SIP: C_SIP, LABEL_EXIT: C_EXIT, LABEL_NIFTY: C_NIFTY,
+        },
+    }
+
+    with open(os.path.join(OUTPUT_DIR, filename), "w") as f:
+        json.dump(data, f)
+    print(f"  Dashboard data saved → {filename}")
+
+
 # ─── Main ───────────────────────────────────────────────────────────────────
 
 def main():
@@ -937,6 +1072,12 @@ def main():
     chart_8_summary_table(metrics_list, total_invested, len(sig_syms), len(buy_dates), len(stocks_bought), assumptions, "8_summary_table.png", max_idle, avg_idle)
 
     write_trade_log(buy_log, trade_log, monthly_inv, timed_sim, os.path.join(OUTPUT_DIR, "trades.csv"))
+
+    save_dashboard_data(portfolios, nifty_series, timed_sim, exit_sim,
+                        nav_series, nifty_price, metrics_list, buy_log,
+                        total_invested, assumptions, idle_streaks,
+                        len(sig_syms), len(buy_dates), len(stocks_bought), cash_pct,
+                        "dashboard_data.json")
 
     charts = sorted(f for f in os.listdir(OUTPUT_DIR) if f.endswith(".png"))
     print(f"\n  {len(charts)} charts saved to {OUTPUT_DIR}/:")
