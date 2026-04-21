@@ -31,14 +31,16 @@ C_SIP     = "#2196F3"
 C_TIMED   = "#4CAF50"
 C_EXIT    = "#FF9800"
 C_NIFTY   = "#9C27B0"
+C_PARTIAL = "#E91E63"
 C_RED     = "#F44336"
 C_YELLOW  = "#FFC107"
 C_GRAY    = "#9E9E9E"
 
-LABEL_SIP   = "SIP on Your Stocks"
-LABEL_TIMED = "Your Strategy (Timed HODL)"
-LABEL_EXIT  = "Timed Entry+Exit"
-LABEL_NIFTY = "SIP on NIFTY 50"
+LABEL_SIP     = "SIP on Your Stocks"
+LABEL_TIMED   = "Your Strategy (Timed HODL)"
+LABEL_EXIT    = "Timed Entry+Exit"
+LABEL_NIFTY   = "SIP on NIFTY 50"
+LABEL_PARTIAL = "Partial SIP+Timed"
 
 CONFIG = {
     "start": "2010-01-01",
@@ -267,6 +269,68 @@ def simulate_timed_hodl(stock_dfs, symbols, monthly_inv, bb_sig, bb_mid, imp_sig
     if idle_days > 0: idle_streaks.append(idle_days)
     return pd.DataFrame(records).set_index("date"), cashflows, buy_log, idle_streaks
 
+def simulate_partial_sip(stock_dfs, symbols, monthly_inv, bb_sig, bb_mid, imp_sig, slippage_bps=5,
+                         sip_pct=0.5, idle_threshold=42, max_stock_pct=0.15):
+    dates = get_all_dates(stock_dfs, symbols)
+    holdings = {s: 0.0 for s in symbols}
+    last_price = {s: 0.0 for s in symbols}
+    cash_timed = 0.0
+    idle_days = 0
+    done_months = set()
+    records, cashflows, buy_log = [], [], []
+    for dt in dates:
+        _update_prices(last_price, stock_dfs, symbols, dt)
+        key = (dt.year, dt.month)
+        if key in monthly_inv and key not in done_months:
+            amt = monthly_inv[key]["amount"]
+            done_months.add(key); cashflows.append((dt, -amt))
+            sip_amt = amt * sip_pct
+            cash_timed += amt - sip_amt
+            avail = [s for s in symbols if s in stock_dfs and dt in stock_dfs[s].index and last_price[s] > 0]
+            if avail:
+                per = sip_amt / len(avail)
+                for s in avail:
+                    holdings[s] += per / (last_price[s] * (1 + slippage_bps / 10000))
+                    buy_log.append({"date": dt, "stock": s, "price": last_price[s], "amount": per, "type": "sip"})
+        bought = False
+        if cash_timed > 0:
+            buying = [s for s in symbols
+                      if s in bb_sig and s in imp_sig
+                      and dt in bb_sig[s].index and dt in imp_sig[s].index
+                      and bb_sig[s].loc[dt] in ("Buy", "Watch") and imp_sig[s].loc[dt] == "Buy"]
+            if buying:
+                per = cash_timed / len(buying)
+                for s in buying:
+                    holdings[s] += per / (last_price[s] * (1 + slippage_bps / 10000))
+                    buy_log.append({"date": dt, "stock": s, "price": last_price[s], "amount": per, "type": "signal"})
+                cash_timed = 0.0; bought = True; idle_days = 0
+        if cash_timed > 0:
+            idle_days += 1
+            if idle_days >= idle_threshold:
+                port_val = _portfolio_value(holdings, last_price, symbols, cash_timed)
+                candidates = [s for s in symbols
+                              if holdings[s] > 0 and last_price[s] > 0
+                              and s in bb_mid and dt in bb_mid[s].index
+                              and not np.isnan(bb_mid[s].loc[dt])
+                              and last_price[s] < bb_mid[s].loc[dt]]
+                if candidates:
+                    remaining = cash_timed
+                    per = remaining / len(candidates)
+                    for s in candidates:
+                        cur_val = holdings[s] * last_price[s]
+                        max_val = port_val * max_stock_pct
+                        headroom = max(0, max_val - cur_val)
+                        alloc = min(per, headroom)
+                        if alloc > 0:
+                            holdings[s] += alloc / (last_price[s] * (1 + slippage_bps / 10000))
+                            buy_log.append({"date": dt, "stock": s, "price": last_price[s], "amount": alloc, "type": "fallback"})
+                            remaining -= alloc
+                    cash_timed = remaining; idle_days = 0
+        elif bought:
+            idle_days = 0
+        records.append({"date": dt, "portfolio": _portfolio_value(holdings, last_price, symbols, cash_timed), "cash": cash_timed})
+    return pd.DataFrame(records).set_index("date"), cashflows, buy_log
+
 def simulate_timed_exit(stock_dfs, symbols, monthly_inv, bb_sig, imp_sig, imp_state, slippage_bps=5):
     dates = get_all_dates(stock_dfs, symbols)
     holdings = {s: 0.0 for s in symbols}
@@ -393,7 +457,8 @@ def _rupee_fmt(ax):
 
 def chart_1_equity(portfolios, nifty_series, total_invested, filename):
     fig, ax = plt.subplots(figsize=(14, 7))
-    ax.plot(portfolios[LABEL_TIMED].index, portfolios[LABEL_TIMED].values, color=C_TIMED, linewidth=2.2, label=LABEL_TIMED, zorder=4)
+    ax.plot(portfolios[LABEL_TIMED].index, portfolios[LABEL_TIMED].values, color=C_TIMED, linewidth=2.2, label=LABEL_TIMED, zorder=5)
+    ax.plot(portfolios[LABEL_PARTIAL].index, portfolios[LABEL_PARTIAL].values, color=C_PARTIAL, linewidth=1.8, label=LABEL_PARTIAL, zorder=4)
     ax.plot(portfolios[LABEL_SIP].index, portfolios[LABEL_SIP].values, color=C_SIP, linewidth=1.8, label=LABEL_SIP, zorder=3)
     ax.plot(portfolios[LABEL_EXIT].index, portfolios[LABEL_EXIT].values, color=C_EXIT, linewidth=1.3, alpha=0.7, label=LABEL_EXIT, zorder=2)
     if nifty_series is not None:
@@ -427,7 +492,7 @@ def chart_1_equity(portfolios, nifty_series, total_invested, filename):
 
 
 def chart_2_drawdowns(portfolios, nifty_series, filename):
-    items = [(LABEL_TIMED, C_TIMED), (LABEL_SIP, C_SIP)]
+    items = [(LABEL_TIMED, C_TIMED), (LABEL_PARTIAL, C_PARTIAL), (LABEL_SIP, C_SIP)]
     if nifty_series is not None:
         items.append((LABEL_NIFTY, C_NIFTY))
 
@@ -472,10 +537,10 @@ def chart_3_cash(timed_sim, exit_sim, filename):
 
 
 def chart_4_regimes(nav_series, nifty_price, filename):
-    strats = [LABEL_TIMED, LABEL_SIP]
+    strats = [LABEL_TIMED, LABEL_PARTIAL, LABEL_SIP]
     if nifty_price is not None:
         strats.append(LABEL_NIFTY)
-    colors = {LABEL_TIMED: C_TIMED, LABEL_SIP: C_SIP, LABEL_NIFTY: C_NIFTY}
+    colors = {LABEL_TIMED: C_TIMED, LABEL_PARTIAL: C_PARTIAL, LABEL_SIP: C_SIP, LABEL_NIFTY: C_NIFTY}
 
     regime_names = list(REGIMES.keys())
     data_rows = []
@@ -641,7 +706,7 @@ def chart_8_summary_table(metrics_list, total_invested, n_stocks, n_signals, n_s
     row_labels = [r[0] for r in rows]
     cell_text = [r[1] for r in rows]
 
-    colors_header = [C_TIMED, C_SIP, C_EXIT, C_NIFTY][:len(col_labels)]
+    colors_header = [C_TIMED, C_PARTIAL, C_SIP, C_EXIT, C_NIFTY][:len(col_labels)]
     table = ax.table(cellText=cell_text, rowLabels=row_labels, colLabels=col_labels,
                      cellLoc="center", rowLoc="right", loc="center")
     table.auto_set_font_size(False)
@@ -826,15 +891,18 @@ def main():
     print(f"\n  Simulating strategies...")
     sip_sim, sip_cf = simulate_sip(stock_dfs, sig_syms, monthly_inv, cfg["slippage_bps"])
     timed_sim, timed_cf, buy_log, idle_streaks = simulate_timed_hodl(stock_dfs, sig_syms, monthly_inv, bb_sig, bb_mid, imp_sig, cfg["slippage_bps"])
+    partial_sim, partial_cf, partial_log = simulate_partial_sip(stock_dfs, sig_syms, monthly_inv, bb_sig, bb_mid, imp_sig, cfg["slippage_bps"])
     exit_sim, exit_cf, trade_log = simulate_timed_exit(stock_dfs, sig_syms, monthly_inv, bb_sig, imp_sig, imp_state, cfg["slippage_bps"])
     nifty_sim, nifty_cf = simulate_nifty_sip(cfg, monthly_inv)
 
     m_timed = compute_metrics(timed_sim["portfolio"], LABEL_TIMED, timed_cf)
     m_sip = compute_metrics(sip_sim["portfolio"], LABEL_SIP, sip_cf)
+    m_partial = compute_metrics(partial_sim["portfolio"], LABEL_PARTIAL, partial_cf)
     m_exit = compute_metrics(exit_sim["portfolio"], LABEL_EXIT, exit_cf)
     m_nifty = compute_metrics(nifty_sim["portfolio"], LABEL_NIFTY, nifty_cf) if nifty_sim is not None else None
 
-    portfolios = {LABEL_TIMED: timed_sim["portfolio"], LABEL_SIP: sip_sim["portfolio"], LABEL_EXIT: exit_sim["portfolio"]}
+    portfolios = {LABEL_TIMED: timed_sim["portfolio"], LABEL_SIP: sip_sim["portfolio"],
+                  LABEL_PARTIAL: partial_sim["portfolio"], LABEL_EXIT: exit_sim["portfolio"]}
     nifty_series = nifty_sim["portfolio"] if nifty_sim is not None else None
 
     buy_dates = set(b["date"] for b in buy_log)
@@ -845,7 +913,7 @@ def main():
     max_idle = max(idle_streaks) if idle_streaks else 0
     avg_idle = np.mean(idle_streaks) if idle_streaks else 0
 
-    metrics_list = [m_timed, m_sip, m_exit]
+    metrics_list = [m_timed, m_partial, m_sip, m_exit]
     if m_nifty: metrics_list.append(m_nifty)
 
     assumptions = compute_investment_assumptions(cfg, dates)
@@ -859,8 +927,9 @@ def main():
     nifty_raw = yf.download("^NSEI", start=cfg["start"], end=cfg["end"], progress=False)
     nifty_price = flatten_cols(nifty_raw)["Close"].dropna() if not nifty_raw.empty else None
     nav_timed = _compute_nav(timed_sim, timed_cf)
+    nav_partial = _compute_nav(partial_sim, partial_cf)
     nav_sip = _compute_nav(sip_sim, sip_cf)
-    nav_series = {LABEL_TIMED: nav_timed, LABEL_SIP: nav_sip}
+    nav_series = {LABEL_TIMED: nav_timed, LABEL_PARTIAL: nav_partial, LABEL_SIP: nav_sip}
     chart_4_regimes(nav_series, nifty_price, "4_regime_returns.png")
     chart_5_rolling_alpha(portfolios, "5_rolling_alpha.png")
     chart_6_buy_distribution(buy_log, len(sig_syms), "6_buy_distribution.png")

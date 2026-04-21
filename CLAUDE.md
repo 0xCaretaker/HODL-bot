@@ -26,7 +26,9 @@ Long-only signals for NSE stocks listed in `stocks.txt` (symbols without `.NS` s
 
 3. **Fallback averaging** (backtest only, `simulate_timed_hodl`). If cash sits idle for >42 trading days (~2 months), deploy it equally into existing holdings where price is below the BB midline (200-SMA). Each stock is capped at 15% of portfolio value to prevent concentration. This reduces cash drag without buying overvalued positions.
 
-4. **Telegram delivery** (`bot.py:send_bulk_telegram_message`). MarkdownV2, sent to multiple chat IDs. Two sections: Standard MACD and Impulse MACD, each restricted to the Bollinger-filtered universe. Header includes NIFTY 50 and NIFTY Midcap 100 day move + % from ATH (`get_index_moves`).
+4. **Partial SIP+Timed** (backtest only, `simulate_partial_sip`). Splits each month's budget 50/50: half goes as plain SIP across all stocks regardless of signals, half waits for BB+MACD buy signals (with the same fallback logic as the timed strategy). Included as a comparison — currently underperforms pure timed with fallback (₹193.7L vs ₹207.1L) but has better risk-adjusted metrics (Sharpe 1.29, Sortino 3.05).
+
+5. **Telegram delivery** (`bot.py:send_bulk_telegram_message`). MarkdownV2, sent to multiple chat IDs. Two sections: Standard MACD and Impulse MACD, each restricted to the Bollinger-filtered universe. Header includes NIFTY 50 and NIFTY Midcap 100 day move + % from ATH (`get_index_moves`).
 
 ## Architecture notes
 
